@@ -2,6 +2,7 @@
   <img src="https://img.shields.io/badge/python-3.9+-blue.svg" alt="Python 3.9+">
   <img src="https://img.shields.io/badge/dependencies-none-brightgreen.svg" alt="Zero Dependencies">
   <img src="https://img.shields.io/badge/privacy-local-9cf.svg" alt="100% Local">
+  <img src="https://img.shields.io/badge/desktop-GUI-89b4fa.svg" alt="Desktop GUI">
 </p>
 
 <h1 align="center">🔍 Discord Data Analyzer</h1>
@@ -14,11 +15,12 @@
 
 | Category | What You Get |
 |---|---|
+| 🖥️ **Desktop App** | Native window — drop your ZIP, get the full report. No terminal needed. |
 | 💬 **Messages** | DM users, servers, channels, timeline (day/month/year) |
 | 📞 **Voice Calls** | Total duration, per-user breakdown, per-channel sessions, daily stats |
 | 📊 **Full Report** | Everything above in a single command |
 
-### Voice Call Breakdown (NEW)
+### Voice Call Breakdown
 
 The `voice` command now shows **who you actually talked to**, not just total airtime:
 
@@ -38,13 +40,35 @@ DM Call Duration by User:
 
 ## 🚀 Quick Start
 
+### Desktop App (Windows)
+
+[Download the latest `Discord-Data-Analyzer.exe`](https://github.com/BengtBuecker/Discord-Data-Analysis/releases) from Releases, double-click, drop your ZIP. That's it.
+
+Or run from source:
+
+```bash
+python gui.py
+```
+
+### Command Line
+
 ```bash
 git clone https://github.com/BengtBuecker/Discord-Data-Analysis
 cd Discord-Data-Analysis
 python analyzer.py --dir "path/to/discord/export" all
 ```
 
-> **Prerequisites**: Python 3.9+ — nothing else. Stdlib only.
+> **Prerequisites**: Python 3.9+ — nothing else. Stdlib only. Tkinter ships with Python on Windows.
+
+### Build Your Own .exe
+
+```bash
+pip install pyinstaller
+pyinstaller --onefile --windowed --name "Discord-Data-Analyzer" gui.py
+# → dist/Discord-Data-Analyzer.exe
+```
+
+The [GitHub Actions workflow](.github/workflows/build-exe.yml) also auto-builds a Windows `.exe` on every tagged release.
 
 ---
 
