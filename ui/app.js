@@ -40,21 +40,38 @@ function setupLanding() {
   // Drag-drop from OS uses the Python bridge
   selectBtn.addEventListener("click", () => doSelectFile());
 
-  // Web-native drag-drop
   dropzone.addEventListener("dragover", (e) => {
     e.preventDefault();
+    e.stopPropagation();
     dropzone.classList.add("drag-over");
   });
-  dropzone.addEventListener("dragleave", () => {
-    dropzone.classList.remove("drag-over");
-  });
-  dropzone.addEventListener("drop", (e) => {
+  dropzone.addEventListener("dragleave", (e) => {
     e.preventDefault();
     dropzone.classList.remove("drag-over");
-    const files = e.dataTransfer.files;
-    if (files.length) {
+  });
+  dropzone.addEventListener("drop", async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dropzone.classList.remove("drag-over");
+    const dt = e.dataTransfer;
+    let path = null;
+    if (dt.files.length) {
+      path = dt.files[0].path || dt.files[0].name;
+    }
+    if (!path && dt.getData("text")) {
+      path = dt.getData("text").replace(/^file:\/\/\/?/, "");
+    }
+    if (path) {
+      await analyzeFile(path);
+    } else {
       EL("statusMsg").style.display = "block";
-      EL("statusMsg").textContent = "Drag-drop from browser is not supported. Click to select.";
+      EL("statusMsg").textContent = "Could not read file path. Use the button instead.";
+    }
+  });
+
+  window.addEventListener("load", () => {
+    if (window.location.protocol === "file:" && window.location.pathname.endsWith(".zip")) {
+      analyzeFile(decodeURIComponent(window.location.pathname.replace(/^\//, "")));
     }
   });
 }

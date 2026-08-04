@@ -32,7 +32,7 @@ def run_webview():
         min_size=(640, 500),
         resizable=True,
     )
-    webview.start(debug=False)
+    webview.start(debug=False, private_mode=False)
 
 
 def main():
