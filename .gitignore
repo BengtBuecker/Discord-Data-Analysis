@@ -8,6 +8,7 @@ venv/
 
 # Output
 output/
+graphify-out/
 
 # OS
 .DS_Store
