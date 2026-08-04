@@ -1,258 +1,327 @@
 #!/usr/bin/env python3
-"""Discord Data Analyzer — GUI Edition.
+"""Discord Data Analyzer — Desktop GUI
 
-Zero-dependency web UI: upload your Discord GDPR ZIP, get the full report.
-Start with:  python gui.py
-Then open:   http://localhost:8080
+Zero-dependency desktop app. Select or drop your Discord GDPR ZIP,
+get the full analysis report. Works offline.
+
+Start:  python gui.py
+Build:  pip install pyinstaller && pyinstaller --onefile --windowed gui.py
 """
 
-import html
 import io
 import os
-import re
 import shutil
 import subprocess
 import sys
 import tempfile
+import threading
+import tkinter as tk
 import zipfile
-from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse
+from tkinter import filedialog, ttk
 
 ANALYZER_DIR = Path(__file__).parent.resolve()
-TEMPLATE = """<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Discord Data Analyzer</title>
-<style>
-* { box-sizing:border-box; margin:0; padding:0 }
-body { font-family:system-ui,sans-serif; background:#1e1e2e; color:#cdd6f4; padding:2rem; max-width:900px; margin:0 auto }
-h1 { text-align:center; margin-bottom:0.25rem }
-.sub { text-align:center; color:#6c7086; margin-bottom:2rem; font-size:0.9rem }
-.upload-box { background:#313244; border:2px dashed #45475a; border-radius:12px; padding:2.5rem; text-align:center; margin-bottom:2rem; transition:border-color 0.2s }
-.upload-box.dragover { border-color:#89b4fa }
-.upload-box p { color:#a6adc8; margin-bottom:1rem }
-input[type=file] { display:block; margin:0 auto 1rem; color:#cdd6f4 }
-button { background:#89b4fa; color:#1e1e2e; border:none; padding:0.75rem 2rem; border-radius:8px; font-size:1rem; font-weight:600; cursor:pointer }
-button:hover { background:#b4d0fb }
-.spinner { display:none; margin:1rem auto; width:2rem; height:2rem; border:3px solid #45475a; border-top-color:#89b4fa; border-radius:50%; animation:spin 0.75s linear infinite }
-@keyframes spin { to { transform:rotate(360deg) } }
-.error { background:#f38ba8; color:#1e1e2e; padding:1rem; border-radius:8px; margin-bottom:1rem }
-.output { background:#11111b; border:1px solid #313244; border-radius:8px; padding:1.5rem; white-space:pre-wrap; font-family:monospace; font-size:0.82rem; line-height:1.5; overflow-x:auto; max-height:80vh; overflow-y:auto }
-.output h2 { color:#89b4fa; font-size:1rem; margin-top:1.5rem; margin-bottom:0.5rem }
-.output h2:first-child { margin-top:0 }
-.sep { color:#45475a; margin:0 0.5rem }
-.footer { text-align:center; color:#585b70; margin-top:2rem; font-size:0.85rem }
-</style>
-</head>
-<body>
-<h1>Discord Data Analyzer</h1>
-<p class="sub">Upload your Discord GDPR export ZIP &middot; 100% local &middot; zero data leaves your machine</p>
 
-<form id="uploadForm" action="/" method="post" enctype="multipart/form-data">
-  <div class="upload-box" id="dropZone">
-    <p>Drop your Discord data ZIP here or click to select</p>
-    <input type="file" id="zipfile" name="zipfile" accept=".zip" required>
-    <button type="submit">Analyze</button>
-    <div class="spinner" id="spinner"></div>
-  </div>
-</form>
+# ── Colors (Catppuccin Mocha) ──────────────────────────────────────────
+C = {
+    "bg":       "#1e1e2e",
+    "surface":  "#313244",
+    "overlay":  "#45475a",
+    "text":     "#cdd6f4",
+    "subtext":  "#6c7086",
+    "blue":     "#89b4fa",
+    "green":    "#a6e3a1",
+    "red":      "#f38ba8",
+    "yellow":   "#f9e2af",
+    "base":     "#11111b",
+}
 
-<div id="error"></div>
-<div id="result"></div>
-
-<footer class="footer">Data stays on your machine. Zero external dependencies.</footer>
-
-<script>
-const dz = document.getElementById('dropZone');
-const fileInput = document.getElementById('zipfile');
-const spinner = document.getElementById('spinner');
-const errorEl = document.getElementById('error');
-const resultEl = document.getElementById('result');
-const form = document.getElementById('uploadForm');
-
-['dragenter','dragover'].forEach(e => dz.addEventListener(e, ev => { ev.preventDefault(); dz.classList.add('dragover') }));
-['dragleave','drop'].forEach(e => dz.addEventListener(e, ev => { ev.preventDefault(); dz.classList.remove('dragover') }));
-dz.addEventListener('drop', ev => { fileInput.files = ev.dataTransfer.files });
-
-form.addEventListener('submit', () => {
-  errorEl.innerHTML = '';
-  resultEl.innerHTML = '';
-  spinner.style.display = 'block';
-});
-</script>
-</body>
-</html>"""
+# ── Drag-and-drop support (optional) ───────────────────────────────────
+DND_AVAILABLE = False
+try:
+    from tkinterdnd2 import DND_FILES, TkinterDnD
+    DND_AVAILABLE = True
+except ImportError:
+    pass
 
 
-def _parse_multipart(body: bytes, boundary: str) -> dict:
-    """Parse multipart/form-data manually (no cgi module). Returns {field_name: (filename, data)}."""
-    boundary_bytes = boundary.encode()
-    parts = body.split(b"--" + boundary_bytes)
-    result = {}
-    for part in parts:
-        if part in (b"", b"--", b"--\r\n"):
-            continue
-        header_end = part.find(b"\r\n\r\n")
-        if header_end == -1:
-            continue
-        headers_raw = part[:header_end].decode(errors="replace")
-        content = part[header_end + 4 :]
-        if content.endswith(b"\r\n"):
-            content = content[:-2]
-
-        name_match = re.search(r'name="([^"]+)"', headers_raw)
-        if not name_match:
-            continue
-        name = name_match.group(1)
-        filename_match = re.search(r'filename="([^"]*)"', headers_raw)
-        if filename_match:
-            result[name] = (filename_match.group(1), content)
+class AnalyzerApp:
+    def __init__(self):
+        if DND_AVAILABLE:
+            self.root = TkinterDnD.Tk()
         else:
-            result[name] = (None, content.decode(errors="replace"))
-    return result
+            self.root = tk.Tk()
 
+        self.root.title("Discord Data Analyzer")
+        self.root.geometry("900x700")
+        self.root.minsize(600, 500)
+        self.root.configure(bg=C["bg"])
 
-def _run_analysis(extract_dir: Path) -> str:
-    """Run analyzer.py --dir <extract_dir> all and return captured output."""
-    proc = subprocess.run(
-        [sys.executable, str(ANALYZER_DIR / "analyzer.py"), "--dir", str(extract_dir), "all"],
-        capture_output=True,
-        text=True,
-        timeout=300,
-        cwd=str(ANALYZER_DIR),
-    )
-    if proc.returncode != 0 and not proc.stdout:
-        return f"Error: {proc.stderr}"
-    return proc.stdout
+        self._build_ui()
+        self._center_window()
 
+    def _center_window(self):
+        self.root.update_idletasks()
+        w, h = self.root.winfo_width(), self.root.winfo_height()
+        sw, sh = self.root.winfo_screenwidth(), self.root.winfo_screenheight()
+        x, y = (sw - w) // 2, (sh - h) // 2
+        self.root.geometry(f"{w}x{h}+{x}+{y}")
 
-def _format_html(text: str) -> str:
-    """Convert analyzer plain-text output to simple HTML with section highlighting."""
-    escaped = html.escape(text)
-    lines = escaped.split("\n")
-    out = []
-    for line in lines:
-        if line.startswith("===") or line.startswith("---"):
-            # Separator lines → thin divider
-            prev = out[-1] if out else ""
-            if prev and not prev.startswith("</h2>"):
-                out.append(f'<span style="color:#45475a">{line}</span>')
-            else:
-                out.append(f'<span style="color:#45475a">{line}</span>')
-        elif line.startswith("  ") and not line.startswith("   "):
-            # Section header (indented by 2 spaces, like "  DM Call Duration...")
-            stripped = line.strip()
-            if stripped and not stripped.startswith("─") and not stripped.startswith("="):
-                out.append(f"<h2>{stripped}</h2>")
-            else:
-                out.append(line)
-        else:
-            out.append(line)
-    return "\n".join(out)
+    def _build_ui(self):
+        # ── Top bar
+        top = tk.Frame(self.root, bg=C["bg"])
+        top.pack(fill=tk.X, padx=24, pady=(24, 0))
 
+        tk.Label(
+            top, text="Discord Data Analyzer", font=("Segoe UI", 18, "bold"),
+            fg=C["text"], bg=C["bg"],
+        ).pack(anchor="w")
 
-class RequestHandler(BaseHTTPRequestHandler):
+        tk.Label(
+            top, text="Drop your Discord GDPR ZIP or select it below. 100% offline.",
+            font=("Segoe UI", 10), fg=C["subtext"], bg=C["bg"],
+        ).pack(anchor="w", pady=(4, 0))
 
-    def do_GET(self):
-        self.send_response(200)
-        self.send_header("Content-Type", "text/html; charset=utf-8")
-        self.end_headers()
-        self.wfile.write(TEMPLATE.encode())
+        # ── Drop zone
+        self.drop_frame = tk.Frame(
+            self.root, bg=C["surface"], highlightthickness=2,
+            highlightbackground=C["overlay"], relief=tk.FLAT,
+        )
+        self.drop_frame.pack(fill=tk.BOTH, expand=False, padx=24, pady=16)
 
-    def do_POST(self):
-        content_type = self.headers.get("Content-Type", "")
-        if "multipart/form-data" not in content_type:
-            self._send_html(400, '<div class="error">Invalid request. Use the upload form.</div>')
+        self.drop_label = tk.Label(
+            self.drop_frame,
+            text="Drop your Discord ZIP here\nor click to select",
+            font=("Segoe UI", 13), fg=C["subtext"], bg=C["surface"],
+            justify=tk.CENTER, pady=40,
+        )
+        self.drop_label.pack(fill=tk.BOTH, expand=True)
+
+        self._bind_drop()
+
+        # File picker button
+        self.btn_frame = tk.Frame(self.root, bg=C["bg"])
+        self.btn_frame.pack(fill=tk.X, padx=24)
+
+        self.select_btn = tk.Button(
+            self.btn_frame, text="Select ZIP File", font=("Segoe UI", 11, "bold"),
+            bg=C["blue"], fg=C["base"], activebackground=C["green"],
+            activeforeground=C["base"], relief=tk.FLAT, bd=0,
+            padx=24, pady=8, cursor="hand2",
+            command=self._select_file,
+        )
+        self.select_btn.pack(side=tk.LEFT)
+
+        self.status_label = tk.Label(
+            self.btn_frame, text="", font=("Segoe UI", 10),
+            fg=C["subtext"], bg=C["bg"],
+        )
+        self.status_label.pack(side=tk.LEFT, padx=16)
+
+        # ── Progress bar
+        self.progress = ttk.Progressbar(
+            self.root, mode="indeterminate", length=300,
+        )
+        self.progress.pack(fill=tk.X, padx=24, pady=(12, 0))
+        self.progress.pack_forget()
+
+        # ── Results area
+        self.result_frame = tk.Frame(self.root, bg=C["bg"])
+        self.result_frame.pack(fill=tk.BOTH, expand=True, padx=24, pady=(12, 8))
+
+        self.result_text = tk.Text(
+            self.result_frame, wrap=tk.WORD, font=("Consolas", 10),
+            bg=C["base"], fg=C["text"], insertbackground=C["text"],
+            relief=tk.FLAT, bd=0, padx=16, pady=12,
+            state=tk.DISABLED,
+        )
+        self.result_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        scrollbar = tk.Scrollbar(
+            self.result_frame, command=self.result_text.yview,
+            bg=C["surface"], troughcolor=C["bg"], activebackground=C["overlay"],
+        )
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        self.result_text.configure(yscrollcommand=scrollbar.set)
+
+        self._setup_text_tags()
+
+        # ── Bottom buttons
+        self.bottom_frame = tk.Frame(self.root, bg=C["bg"])
+        self.bottom_frame.pack(fill=tk.X, padx=24, pady=(0, 16))
+
+        self.save_btn = tk.Button(
+            self.bottom_frame, text="Save Results", font=("Segoe UI", 10),
+            bg=C["surface"], fg=C["text"], activebackground=C["overlay"],
+            activeforeground=C["text"], relief=tk.FLAT, bd=0,
+            padx=16, pady=6, cursor="hand2",
+            command=self._save_results,
+            state=tk.DISABLED,
+        )
+        self.save_btn.pack(side=tk.LEFT)
+
+        self.new_btn = tk.Button(
+            self.bottom_frame, text="New Analysis", font=("Segoe UI", 10),
+            bg=C["surface"], fg=C["text"], activebackground=C["overlay"],
+            activeforeground=C["text"], relief=tk.FLAT, bd=0,
+            padx=16, pady=6, cursor="hand2",
+            command=self._reset,
+            state=tk.DISABLED,
+        )
+        self.new_btn.pack(side=tk.LEFT, padx=8)
+
+        # ── Status bar
+        self.status_bar = tk.Label(
+            self.root, text="Ready", font=("Segoe UI", 9),
+            fg=C["subtext"], bg=C["bg"], anchor=tk.W,
+        )
+        self.status_bar.pack(fill=tk.X, padx=24, pady=(0, 8))
+
+    def _setup_text_tags(self):
+        self.result_text.tag_configure("h1", font=("Consolas", 12, "bold"), foreground=C["blue"])
+        self.result_text.tag_configure("h2", font=("Consolas", 10, "bold"), foreground=C["green"])
+        self.result_text.tag_configure("dim", foreground=C["overlay"])
+        self.result_text.tag_configure("err", foreground=C["red"])
+
+    def _bind_drop(self):
+        # Click on drop zone → file dialog
+        self.drop_label.bind("<Button-1>", lambda e: self._select_file())
+        self.drop_frame.bind("<Button-1>", lambda e: self._select_file())
+        self.drop_label.configure(cursor="hand2")
+
+        if DND_AVAILABLE:
+            self.drop_label.drop_target_register(DND_FILES)
+            self.drop_frame.drop_target_register(DND_FILES)
+
+            def on_drop(event):
+                path = event.data.strip("{}")
+                if os.path.isfile(path):
+                    self._process_file(path)
+
+            self.drop_label.dnd_bind("<<Drop>>", on_drop)
+            self.drop_frame.dnd_bind("<<Drop>>", on_drop)
+
+    # ── Actions ────────────────────────────────────────────────────────
+
+    def _select_file(self):
+        path = filedialog.askopenfilename(
+            title="Select Discord Data ZIP",
+            filetypes=[("ZIP files", "*.zip"), ("All files", "*.*")],
+        )
+        if path:
+            self._process_file(path)
+
+    def _process_file(self, path: str):
+        path = Path(path)
+        if not path.suffix.lower() == ".zip":
+            self._set_status("Please select a .zip file.", C["red"])
+            return
+        if not path.exists():
+            self._set_status("File not found.", C["red"])
             return
 
-        boundary_match = re.search(r"boundary=([^;]+)", content_type)
-        if not boundary_match:
-            self._send_html(400, '<div class="error">Missing form boundary.</div>')
-            return
+        self._set_status(f"Processing {path.name}...", C["yellow"])
+        self.progress.pack(fill=tk.X, padx=24, pady=(12, 0))
+        self.progress.start()
+        self.select_btn.configure(state=tk.DISABLED)
+        self.new_btn.configure(state=tk.DISABLED)
+        self.save_btn.configure(state=tk.DISABLED)
+        self.drop_label.configure(text=f"Analyzing {path.name}...", fg=C["yellow"])
 
-        boundary = boundary_match.group(1).strip()
-        if boundary.startswith('"') and boundary.endswith('"'):
-            boundary = boundary[1:-1]
+        threading.Thread(target=self._run_analysis, args=(path,), daemon=True).start()
 
-        content_length = int(self.headers.get("Content-Length", 0))
-        body = self.rfile.read(content_length)
-
-        fields = _parse_multipart(body, boundary)
-        zip_entry = fields.get("zipfile")
-        if not zip_entry or not zip_entry[1]:
-            self._send_html(400, '<div class="error">No file uploaded.</div>')
-            return
-
-        filename, zip_data = zip_entry
-        if not filename.lower().endswith(".zip"):
-            self._send_html(400, '<div class="error">Please upload a .zip file.</div>')
-            return
-
+    def _run_analysis(self, zip_path: Path):
         extract_dir = Path(tempfile.mkdtemp(prefix="discord_export_"))
-
         try:
-            with zipfile.ZipFile(io.BytesIO(zip_data)) as zf:
+            with zipfile.ZipFile(zip_path, "r") as zf:
                 zf.extractall(extract_dir)
         except (zipfile.BadZipFile, OSError) as e:
+            self.root.after(0, lambda: self._show_error(f"Invalid ZIP: {e}"))
             shutil.rmtree(extract_dir, ignore_errors=True)
-            self._send_html(400, f'<div class="error">Invalid ZIP file: {html.escape(str(e))}</div>')
             return
 
-        output = _run_analysis(extract_dir)
+        proc = subprocess.run(
+            [sys.executable, str(ANALYZER_DIR / "analyzer.py"), "--dir", str(extract_dir), "all"],
+            capture_output=True, text=True, timeout=300, cwd=str(ANALYZER_DIR),
+        )
+
         shutil.rmtree(extract_dir, ignore_errors=True)
 
-        formatted = _format_html(output)
-        html_output = f'<div class="output">{formatted}</div>'
-        self._send_html(200, html_output)
+        output = proc.stdout if proc.returncode == 0 or proc.stdout else f"Error:\n{proc.stderr}"
 
-    def _send_html(self, status: int, body: str):
-        page = f"""<!DOCTYPE html>
-<html lang="en">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Discord Data Analyzer</title>
-<style>
-* {{ box-sizing:border-box; margin:0; padding:0 }}
-body {{ font-family:system-ui,sans-serif; background:#1e1e2e; color:#cdd6f4; padding:2rem; max-width:900px; margin:0 auto }}
-h1 {{ text-align:center; margin-bottom:0.25rem }}
-.sub {{ text-align:center; color:#6c7086; margin-bottom:2rem; font-size:0.9rem }}
-a {{ color:#89b4fa }}
-.error {{ background:#f38ba8; color:#1e1e2e; padding:1rem; border-radius:8px; margin-bottom:1rem }}
-.output {{ background:#11111b; border:1px solid #313244; border-radius:8px; padding:1.5rem; white-space:pre-wrap; font-family:monospace; font-size:0.82rem; line-height:1.5; overflow-x:auto }}
-.output h2 {{ color:#89b4fa; font-size:1rem; margin-top:1.5rem; margin-bottom:0.5rem }}
-.output h2:first-child {{ margin-top:0 }}
-.back-link {{ text-align:center; margin-top:1.5rem }}
-</style>
-</head>
-<body>
-<h1>Discord Data Analyzer</h1>
-<p class="sub">100% local &middot; your data never leaves your machine</p>
-{body}
-<p class="back-link"><a href="/">Analyze another</a></p>
-</body>
-</html>"""
-        self.send_response(status)
-        self.send_header("Content-Type", "text/html; charset=utf-8")
-        self.end_headers()
-        self.wfile.write(page.encode())
+        self.root.after(0, lambda: self._show_results(output))
 
-    def log_message(self, format, *args):
-        pass  # Suppress access logs
+    def _show_results(self, text: str):
+        self.progress.stop()
+        self.progress.pack_forget()
+        self.select_btn.configure(state=tk.NORMAL)
+        self.new_btn.configure(state=tk.NORMAL)
+        self.save_btn.configure(state=tk.NORMAL)
+        self.drop_label.configure(
+            text="Drop your Discord ZIP here\nor click to select", fg=C["subtext"],
+        )
+
+        self.result_text.configure(state=tk.NORMAL)
+        self.result_text.delete("1.0", tk.END)
+
+        for line in text.split("\n"):
+            stripped = line.strip()
+            if stripped.startswith("===="):
+                self.result_text.insert(tk.END, line + "\n", "h1")
+            elif line.startswith("  ") and stripped and not stripped.startswith("─") and not stripped.startswith("="):
+                self.result_text.insert(tk.END, line + "\n", "h2")
+            elif line.startswith("───") or line.startswith("==="):
+                self.result_text.insert(tk.END, line + "\n", "dim")
+            elif "Error" in stripped or "error" in stripped.lower():
+                self.result_text.insert(tk.END, line + "\n", "err")
+            else:
+                self.result_text.insert(tk.END, line + "\n")
+
+        self.result_text.configure(state=tk.DISABLED)
+        self.result_text.see("1.0")
+        self._set_status("Analysis complete.", C["green"])
+
+    def _show_error(self, msg: str):
+        self.progress.stop()
+        self.progress.pack_forget()
+        self.select_btn.configure(state=tk.NORMAL)
+        self.drop_label.configure(
+            text="Drop your Discord ZIP here\nor click to select", fg=C["subtext"],
+        )
+        self._set_status(msg, C["red"])
+
+    def _save_results(self):
+        path = filedialog.asksaveasfilename(
+            title="Save Results",
+            defaultextension=".txt",
+            filetypes=[("Text files", "*.txt"), ("All files", "*.*")],
+        )
+        if path:
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(self.result_text.get("1.0", tk.END))
+            self._set_status(f"Saved to {Path(path).name}", C["green"])
+
+    def _reset(self):
+        self.result_text.configure(state=tk.NORMAL)
+        self.result_text.delete("1.0", tk.END)
+        self.result_text.configure(state=tk.DISABLED)
+        self.new_btn.configure(state=tk.DISABLED)
+        self.save_btn.configure(state=tk.DISABLED)
+        self.drop_label.configure(
+            text="Drop your Discord ZIP here\nor click to select", fg=C["subtext"],
+        )
+        self._set_status("Ready", C["subtext"])
+
+    def _set_status(self, msg: str, color: str = None):
+        self.status_bar.configure(text=msg, fg=color or C["subtext"])
+
+    def run(self):
+        self.root.mainloop()
 
 
 def main():
-    port = 8080
-    server = HTTPServer(("0.0.0.0", port), RequestHandler)
-    print(f"\n  Discord Data Analyzer GUI")
-    print(f"  Open http://localhost:{port} in your browser")
-    print(f"  Press Ctrl+C to stop\n")
-    try:
-        server.serve_forever()
-    except KeyboardInterrupt:
-        print("\n  Shutting down.")
-        server.server_close()
+    app = AnalyzerApp()
+    app.run()
 
 
 if __name__ == "__main__":
