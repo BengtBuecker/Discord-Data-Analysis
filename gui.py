@@ -49,6 +49,41 @@ C = {
 BAR_COLORS = [C["blue"], C["green"], C["mauve"], C["peach"], C["teal"],
               C["yellow"], C["red"], C["overlay"], C["blue"], C["green"]]
 
+
+class ToolTip:
+    """Hover tooltip — shows exact values on mouse enter."""
+    def __init__(self, widget, text: str):
+        self.widget = widget
+        self.text = text
+        self.tip = None
+        widget.bind("<Enter>", self._show)
+        widget.bind("<Leave>", self._hide)
+        widget.bind("<Motion>", self._move)
+
+    def _show(self, event=None):
+        if self.tip:
+            return
+        x = self.widget.winfo_rootx() + 12
+        y = self.widget.winfo_rooty() - 28
+        self.tip = tk.Toplevel(self.widget)
+        self.tip.wm_overrideredirect(True)
+        self.tip.wm_geometry(f"+{x}+{y}")
+        label = tk.Label(self.tip, text=self.text, font=("Segoe UI", 9),
+                         bg=C["surface0"], fg=C["text"], padx=8, pady=3,
+                         relief=tk.FLAT, bd=0)
+        label.pack()
+
+    def _move(self, event):
+        if self.tip:
+            x = self.widget.winfo_rootx() + event.x + 14
+            y = self.widget.winfo_rooty() + event.y - 34
+            self.tip.wm_geometry(f"+{x}+{y}")
+
+    def _hide(self, event=None):
+        if self.tip:
+            self.tip.destroy()
+            self.tip = None
+
 # -- Optional drag-and-drop ----------------------------------------------
 DND = False
 try:
@@ -307,7 +342,8 @@ class DashboardApp:
 
     def _section_dm_leaderboard(self, data):
         dm_users = data["dm_users"]
-        self._section_header("Top DM Contacts", len(dm_users))
+        total = sum(c for _, c in dm_users)
+        self._section_header("Top DM Contacts", f"{len(dm_users)} users, {total:,} msgs")
         body = self._section_body()
 
         top = dm_users[:12]
@@ -325,22 +361,20 @@ class DashboardApp:
                              fg=C["text"], bg=C["base"], anchor="w", width=26)
             uname.pack(side=tk.LEFT, padx=(8, 4))
 
-            bar_w = int(count / max_count * 280)
-            bar = tk.Canvas(row, bg=C["base"], height=16, width=280,
+            bar_w = int(count / max_count * 320)
+            bar = tk.Canvas(row, bg=C["base"], height=16, width=320,
                              highlightthickness=0, bd=0)
-            bar.pack(side=tk.LEFT, padx=(0, 8))
+            bar.pack(side=tk.LEFT)
             color = BAR_COLORS[i % len(BAR_COLORS)]
             if bar_w > 0:
                 bar.create_rectangle(0, 2, bar_w, 14, fill=color, outline="",
                                      width=0)
-
-            cnt = tk.Label(row, text=f"{count:,}", font=("Consolas", 10, "bold"),
-                           fg=C["subtext"], bg=C["base"], width=8, anchor="e")
-            cnt.pack(side=tk.RIGHT)
+            ToolTip(bar, f"{name}: {count:,} messages")
 
     def _section_servers(self, data):
         servers = [(n, c) for n, c in data["servers"] if n not in ("Direct Messages", "Unknown")]
-        self._section_header("Servers", len(servers))
+        total_srv = sum(c for _, c in servers)
+        self._section_header("Servers", f"{len(servers)} servers, {total_srv:,} msgs")
         body = self._section_body()
 
         top = servers[:10]
@@ -354,18 +388,15 @@ class DashboardApp:
                              fg=C["text"], bg=C["base"], anchor="w", width=32)
             uname.pack(side=tk.LEFT, padx=(8, 4))
 
-            bar_w = int(count / max_count * 280)
-            bar = tk.Canvas(row, bg=C["base"], height=16, width=280,
-                             highlightthickness=0, bd=0)
-            bar.pack(side=tk.LEFT, padx=(0, 8))
+            bar_w = int(count / max_count * 320)
+            bar = tk.Canvas(row, bg=C["base"], height=16, width=320,
+                             highlightthreshold=0, bd=0)
+            bar.pack(side=tk.LEFT)
             color = BAR_COLORS[i % len(BAR_COLORS)]
             if bar_w > 0:
                 bar.create_rectangle(0, 2, bar_w, 14, fill=color, outline="",
                                      width=0)
-
-            cnt = tk.Label(row, text=f"{count:,}", font=("Consolas", 10, "bold"),
-                           fg=C["subtext"], bg=C["base"], width=8, anchor="e")
-            cnt.pack(side=tk.RIGHT)
+            ToolTip(bar, f"{name}: {count:,} messages")
 
     def _section_voice(self, data):
         v = data["voice"]
@@ -373,7 +404,10 @@ class DashboardApp:
         dm_entries = [c for c in channel_durations if c["name_type"] == "dm"]
         sv_entries = [c for c in channel_durations if c["name_type"] == "server"]
 
-        self._section_header("Voice Calls", v.get("total_sessions", 0))
+        total_voice_sec = sum(c["duration_seconds"] for c in channel_durations)
+        total_h = total_voice_sec // 3600
+        total_m = (total_voice_sec % 3600) // 60
+        self._section_header("Voice Calls", f"{total_h}h {total_m}m total")
         body = self._section_body()
 
         if dm_entries:
@@ -393,10 +427,10 @@ class DashboardApp:
                                  bg=C["base"], anchor="w", width=26)
                 uname.pack(side=tk.LEFT, padx=(8, 4))
 
-                bar_w = int(c["duration_seconds"] / max_sec * 240)
-                bar = tk.Canvas(row, bg=C["base"], height=16, width=240,
+                bar_w = int(c["duration_seconds"] / max_sec * 300)
+                bar = tk.Canvas(row, bg=C["base"], height=16, width=300,
                                  highlightthickness=0, bd=0)
-                bar.pack(side=tk.LEFT, padx=(0, 8))
+                bar.pack(side=tk.LEFT)
                 color = BAR_COLORS[i % len(BAR_COLORS)]
                 if bar_w > 0:
                     bar.create_rectangle(0, 2, bar_w, 14, fill=color,
@@ -404,12 +438,7 @@ class DashboardApp:
 
                 h = c["duration_seconds"] // 3600
                 m = (c["duration_seconds"] % 3600) // 60
-                dur_str = f"{h}h {m}m"
-                cnt = tk.Label(row, text=dur_str,
-                               font=("Consolas", 9, "bold"),
-                               fg=C["subtext"], bg=C["base"], width=9,
-                               anchor="e")
-                cnt.pack(side=tk.RIGHT)
+                ToolTip(bar, f"{c['name']}: {h}h {m}m ({c['call_count']} calls)")
 
         if sv_entries:
             tk.Label(body, text="Server Channels", font=("Segoe UI", 9, "bold"),
@@ -428,12 +457,7 @@ class DashboardApp:
 
                 h = c["duration_seconds"] // 3600
                 m = (c["duration_seconds"] % 3600) // 60
-                dur_str = f"{h}h {m}m"
-                cnt = tk.Label(row, text=dur_str,
-                               font=("Consolas", 9, "bold"),
-                               fg=C["subtext"], bg=C["base"], width=9,
-                               anchor="e")
-                cnt.pack(side=tk.RIGHT)
+                ToolTip(row, f"{c['name']}: {h}h {m}m ({c['call_count']} sessions)")
 
     def _section_timeline(self, data):
         timeline = data["timeline"]
@@ -470,6 +494,7 @@ class DashboardApp:
         total_gap = bar_gap * (n + 1)
         bar_width = (bar_area_w - total_gap) / n if n > 0 else 1
 
+        self._timeline_data = {}
         for i, (period, count) in enumerate(items):
             x0 = bar_area_left + bar_gap + i * (bar_width + bar_gap)
             x1 = x0 + bar_width
@@ -478,8 +503,10 @@ class DashboardApp:
             y1 = bar_area_bottom
 
             color = BAR_COLORS[i % len(BAR_COLORS)]
+            tag = f"bar_{i}"
             canvas.create_rectangle(x0, y0, x1, y1, fill=color, outline="",
-                                     width=0)
+                                     width=0, tags=(tag,))
+            self._timeline_data[tag] = (period, count)
 
             # Label every 3rd bar
             if i % 3 == 0 and len(period) >= 7:
@@ -488,6 +515,42 @@ class DashboardApp:
                                     text=label, fill=C["dim"],
                                     font=("Consolas", 7), angle=45,
                                     anchor="nw")
+
+        self._timeline_tip = None
+
+        def on_move(event):
+            x = canvas.canvasx(event.x)
+            y = canvas.canvasy(event.y)
+            overlapping = canvas.find_overlapping(x - 2, y - 2, x + 2, y + 2)
+            for item_id in overlapping:
+                tags = canvas.gettags(item_id)
+                for tag in tags:
+                    if tag.startswith("bar_"):
+                        period, count = self._timeline_data[tag]
+                        tip_text = f"{period}: {count:,} messages"
+                        if self._timeline_tip is None:
+                            self._timeline_tip = tk.Toplevel(canvas)
+                            self._timeline_tip.wm_overrideredirect(True)
+                            label = tk.Label(self._timeline_tip, text=tip_text,
+                                             font=("Segoe UI", 9),
+                                             bg=C["surface0"], fg=C["text"],
+                                             padx=8, pady=3, relief=tk.FLAT, bd=0)
+                            label.pack()
+                        else:
+                            self._timeline_tip.winfo_children()[0].configure(text=tip_text)
+                        rx = canvas.winfo_rootx() + event.x + 14
+                        ry = canvas.winfo_rooty() + event.y - 34
+                        self._timeline_tip.wm_geometry(f"+{rx}+{ry}")
+                        return
+            if self._timeline_tip:
+                self._timeline_tip.destroy()
+                self._timeline_tip = None
+
+        canvas.bind("<Motion>", on_move)
+        canvas.bind("<Leave>", lambda e: (
+            self._timeline_tip.destroy() if self._timeline_tip else None,
+            setattr(self, '_timeline_tip', None),
+        ))
 
         # Max label
         canvas.create_text(bar_area_left - 6, bar_area_top,
