@@ -240,14 +240,21 @@ class AnalyzerApp:
             shutil.rmtree(extract_dir, ignore_errors=True)
             return
 
-        proc = subprocess.run(
-            [sys.executable, str(ANALYZER_DIR / "analyzer.py"), "--dir", str(extract_dir), "all"],
-            capture_output=True, text=True, timeout=300, cwd=str(ANALYZER_DIR),
-        )
+        out_path = extract_dir / "_analysis_output.txt"
+        try:
+            with open(out_path, "w", encoding="utf-8") as outf:
+                subprocess.run(
+                    [sys.executable, str(ANALYZER_DIR / "analyzer.py"), "--dir", str(extract_dir), "all"],
+                    stdout=outf, stderr=subprocess.STDOUT, text=True,
+                    timeout=600, cwd=str(ANALYZER_DIR),
+                )
+            output = out_path.read_text(encoding="utf-8")
+        except subprocess.TimeoutExpired:
+            output = "(timed out after 10 min — dataset may be too large)"
+        except Exception as e:
+            output = f"Error: {e}"
 
         shutil.rmtree(extract_dir, ignore_errors=True)
-
-        output = proc.stdout if proc.returncode == 0 or proc.stdout else f"Error:\n{proc.stderr}"
 
         self.root.after(0, lambda: self._show_results(output))
 
