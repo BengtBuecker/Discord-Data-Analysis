@@ -21,16 +21,16 @@ class AnalyzerApi:
         self._export_dir = None
 
     def selectFile(self) -> str:
-        from tkinter import filedialog, Tk
-        root = Tk()
-        root.withdraw()
-        root.attributes("-topmost", True)
-        path = filedialog.askopenfilename(
-            title="Select Discord Data ZIP",
-            filetypes=[("ZIP files", "*.zip"), ("All files", "*.*")],
-        )
-        root.destroy()
-        return path or ""
+        import webview
+        try:
+            result = webview.windows[0].create_file_dialog(
+                webview.OPEN_DIALOG,
+                allow_multiple=False,
+                file_types=("ZIP Files (*.zip)", "All Files (*.*)"),
+            )
+            return (result[0] if isinstance(result, (list, tuple)) else result) or ""
+        except Exception:
+            return ""
 
     def analyzeZip(self, zip_path: str) -> dict:
         path = Path(zip_path)
