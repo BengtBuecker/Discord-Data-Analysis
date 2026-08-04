@@ -230,14 +230,11 @@ class HoverButton(tk.Canvas):
         self.tag_lower("bg_rect")
 
     def create_rounded_rect(self, x1, y1, x2, y2, r, **kw):
-        points = (
-            x1 + r, y1, x2 - r, y1,
-            x2 - r, y1, x2, y1, x2, y1 + r,
-            x2, y2 - r, x2, y2, x2 - r, y2,
-            x1 + r, y2, x1, y2, x1, y2 - r,
-            x1, y1 + r, x1, y1, x1 + r, y1,
+        inset = min(r, 4) if r > 0 else 0
+        return self.create_rectangle(
+            x1 + inset, y1 + max(inset - 1, 0),
+            x2 - inset, y2 - max(inset - 1, 0), **kw,
         )
-        return self.create_polygon(points, smooth=True, **kw)
 
     def _on_enter(self, event=None):
         self._is_hover = True
@@ -419,14 +416,7 @@ class FilterChip(tk.Canvas):
         self.bind("<KeyPress-Return>", self._on_click)
 
     def create_rounded_rect(self, x1, y1, x2, y2, r, **kw):
-        points = (
-            x1 + r, y1, x2 - r, y1,
-            x2 - r, y1, x2, y1, x2, y1 + r,
-            x2, y2 - r, x2, y2, x2 - r, y2,
-            x1 + r, y2, x1, y2, x1, y2 - r,
-            x1, y1 + r, x1, y1, x1 + r, y1,
-        )
-        return self.create_polygon(points, smooth=True, **kw)
+        return self.create_rectangle(x1 + 2, y1 + 1, x2 - 2, y2 - 1, **kw)
 
     @property
     def active(self):
@@ -1082,10 +1072,9 @@ class DashboardApp:
             self.canvas.itemconfigure(self.canvas_window, width=w)
 
     def _on_window_resize(self, event):
-        """Respond to window resizing."""
         if event.widget is self.root:
-            self._sync_canvas_width()
-            # Re-layout summary cards if needed
+            if hasattr(self, "canvas"):
+                self._sync_canvas_width()
             if hasattr(self, "_summary_grid") and hasattr(self, "_summary_cards"):
                 self._relayout_summary_cards()
 
