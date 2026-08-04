@@ -33,7 +33,7 @@ def print_dm_users(export_dir: Path, top: int = 50):
     print(f"  DM Messages by User  (total: {total} messages)")
     print(f"{'='*60}")
     print(f"  {'User':<30} {'Messages':>8}  {'%':>6}")
-    print(f"  {'─'*30} {'─'*8}  {'─'*6}")
+    print(f"  {'-'*30} {'-'*8}  {'-'*6}")
     for username, count in results[:top]:
         pct = (count / total * 100) if total else 0
         print(f"  {username:<30} {count:>8}  {pct:>5.1f}%")
@@ -49,7 +49,7 @@ def print_server(export_dir: Path):
     print(f"  Messages by Server  (total: {total} messages)")
     print(f"{'='*60}")
     print(f"  {'Server':<40} {'Messages':>8}  {'%':>6}")
-    print(f"  {'─'*40} {'─'*8}  {'─'*6}")
+    print(f"  {'-'*40} {'-'*8}  {'-'*6}")
     for name, count in results:
         pct = (count / total * 100) if total else 0
         print(f"  {name:<40} {count:>8}  {pct:>5.1f}%")
@@ -63,7 +63,7 @@ def print_channels(export_dir: Path, top: int = 30):
     print(f"  Messages by Channel  (total: {total} messages)")
     print(f"{'='*80}")
     print(f"  {'Channel':<45} {'Messages':>8}  {'%':>6}")
-    print(f"  {'─'*45} {'─'*8}  {'─'*6}")
+    print(f"  {'-'*45} {'-'*8}  {'-'*6}")
     for ch_id, ch_name, count in results[:top]:
         display = ch_name if len(ch_name) < 45 else ch_name[:42] + "..."
         pct = (count / total * 100) if total else 0
@@ -80,7 +80,7 @@ def print_timeline(export_dir: Path, granularity: str = "month"):
     print(f"{'='*50}")
     max_count = max(timeline.values()) if timeline else 1
     for period, count in timeline.items():
-        bar = "█" * min(int(count / max_count * 30), 30)
+        bar = "#" * min(int(count / max_count * 30), 30)
         print(f"  {period}  {count:>6}  {bar}")
     print()
 
@@ -98,7 +98,7 @@ def print_voice(export_dir: Path):
     if summary["sessions_by_day"]:
         print(f"\n  Sessions per day:")
         for day, count in summary["sessions_by_day"].items():
-            bar = "█" * count
+            bar = "#" * count
             print(f"    {day}  {count:>2}  {bar}")
 
     if summary.get("channel_durations"):
@@ -130,7 +130,7 @@ def print_voice(export_dir: Path):
     if summary.get("sessions"):
         print(f"\n  Recent sessions:")
         for s in summary["sessions"][-10:]:
-            print(f"    {s['start']} — {s['duration_minutes']}min")
+            print(f"    {s['start']} -- {s['duration_minutes']}min")
 
     print()
 
