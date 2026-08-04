@@ -101,6 +101,32 @@ def print_voice(export_dir: Path):
             bar = "█" * count
             print(f"    {day}  {count:>2}  {bar}")
 
+    if summary.get("channel_durations"):
+        dm_entries = [c for c in summary["channel_durations"] if c["name_type"] == "dm"]
+        server_entries = [c for c in summary["channel_durations"] if c["name_type"] == "server"]
+        unknown_entries = [c for c in summary["channel_durations"] if c["name_type"] == "unknown"]
+
+        if dm_entries:
+            print(f"\n  DM Call Duration by User:")
+            for c in dm_entries:
+                h = c["duration_seconds"] // 3600
+                m = (c["duration_seconds"] % 3600) // 60
+                print(f"    {c['name']:<30} {h}h {m}m  ({c['call_count']} calls)")
+
+        if server_entries:
+            print(f"\n  Server Voice Channel Duration:")
+            for c in server_entries:
+                h = c["duration_seconds"] // 3600
+                m = (c["duration_seconds"] % 3600) // 60
+                print(f"    {c['name']:<50} {h}h {m}m  ({c['call_count']} sessions)")
+
+        if unknown_entries:
+            print(f"\n  Other Voice Channels:")
+            for c in unknown_entries:
+                h = c["duration_seconds"] // 3600
+                m = (c["duration_seconds"] % 3600) // 60
+                print(f"    {c['name']:<50} {h}h {m}m  ({c['call_count']} sessions)")
+
     if summary.get("sessions"):
         print(f"\n  Recent sessions:")
         for s in summary["sessions"][-10:]:
