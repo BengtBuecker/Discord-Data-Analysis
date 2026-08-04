@@ -374,49 +374,35 @@ class SortableHeader(tk.Frame):
                           ascending=self._sort_state == self.SORT_ASC)
 
 
-class FilterChip(tk.Canvas):
+class FilterChip(tk.Frame):
     """Toggle pill-shaped filter chip."""
 
     def __init__(self, parent, text: str, *, on_toggle=None,
                  active=False, color=CLR["accent"], **kw):
+        super().__init__(parent, bg=CLR["bg"], cursor="hand2", **kw)
         self._text = text
         self._on_toggle = on_toggle
         self._active = active
         self._color = color
         self._hover = False
 
-        dummy = tk.Label(parent, text=text, font=FN["body_bold"])
-        dummy.pack()
-        dummy.update_idletasks()
-        tw, th = dummy.winfo_reqwidth(), dummy.winfo_reqheight()
-        dummy.destroy()
-
-        w, h = tw + 24, th + 8
-        super().__init__(parent, width=w, height=h,
-                         bg=CLR["bg"], highlightthickness=0,
-                         bd=0, cursor="hand2", **kw)
-        self._w, self._h = w, h
-
-        self._rect_id = self.create_rounded_rect(
-            0, 0, w, h, RD["pill"],
-            fill=color if active else CLR["overlay"],
-            outline="",
+        self._lbl = tk.Label(
+            self, text=text, font=FN["body_bold"],
+            fg=CLR["base"] if active else CLR["text"],
+            bg=color if active else CLR["overlay"],
+            padx=SP["md"], pady=SP["xs"],
         )
-        self._text_id = self.create_text(
-            w / 2, h / 2, text=text,
-            fill=CLR["base"] if active else CLR["text"],
-            font=FN["body_bold"],
-        )
+        self._lbl.pack()
 
         self.bind("<Enter>", self._on_enter)
         self.bind("<Leave>", self._on_leave)
         self.bind("<Button-1>", self._on_click)
+        self._lbl.bind("<Enter>", self._on_enter)
+        self._lbl.bind("<Leave>", self._on_leave)
+        self._lbl.bind("<Button-1>", self._on_click)
         self.configure(takefocus=1)
         self.bind("<KeyPress-space>", self._on_click)
         self.bind("<KeyPress-Return>", self._on_click)
-
-    def create_rounded_rect(self, x1, y1, x2, y2, r, **kw):
-        return self.create_rectangle(x1 + 2, y1 + 1, x2 - 2, y2 - 1, **kw)
 
     @property
     def active(self):
@@ -428,24 +414,20 @@ class FilterChip(tk.Canvas):
         self._redraw()
 
     def _redraw(self):
-        self.itemconfigure(
-            self._rect_id,
-            fill=self._color if self._active else CLR["overlay"],
-        )
-        self.itemconfigure(
-            self._text_id,
-            fill=CLR["base"] if self._active else CLR["text"],
+        self._lbl.configure(
+            fg=CLR["base"] if self._active else CLR["text"],
+            bg=self._color if self._active else CLR["overlay"],
         )
 
     def _on_enter(self, event=None):
         self._hover = True
         if not self._active:
-            self.itemconfigure(self._rect_id, fill=CLR["overlay_dim"])
+            self._lbl.configure(bg=CLR["overlay_dim"])
 
     def _on_leave(self, event=None):
         self._hover = False
         if not self._active:
-            self.itemconfigure(self._rect_id, fill=CLR["overlay"])
+            self._lbl.configure(bg=CLR["overlay"])
 
     def _on_click(self, event=None):
         self._active = not self._active
