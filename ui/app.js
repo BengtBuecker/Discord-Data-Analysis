@@ -16,15 +16,21 @@ let state = {
 };
 
 // ── API Bridge ──
-const api = window.pywebview?.api || {
-  async selectFile() {
-    return prompt("Enter ZIP path:") || "";
-  },
-  async analyzeZip(path) {
-    console.warn("Stub: no Python backend. path:", path);
-    return null;
-  },
-};
+function getPywebviewApi() {
+  return new Promise((resolve, reject) => {
+    if (window.pywebview?.api) {
+      resolve(window.pywebview.api);
+      return;
+    }
+    window.addEventListener("pywebviewready", () => {
+      if (window.pywebview?.api) {
+        resolve(window.pywebview.api);
+      } else {
+        reject(new Error("PyWebView bridge not available"));
+      }
+    }, { once: true });
+  });
+}
 
 // ── Landing ──
 
@@ -79,12 +85,18 @@ function setupLanding() {
 async function doSelectFile() {
   EL("statusMsg").style.display = "block";
   EL("statusMsg").textContent = "Selecting file...";
-  const path = await api.selectFile();
-  if (path) {
-    await analyzeFile(path);
-  } else {
-    EL("statusMsg").textContent = "";
-    EL("statusMsg").style.display = "none";
+  try {
+    const api = await getPywebviewApi();
+    const path = await api.selectFile();
+    if (path) {
+      await analyzeFile(path);
+    } else {
+      EL("statusMsg").textContent = "";
+      EL("statusMsg").style.display = "none";
+    }
+  } catch (err) {
+    EL("statusMsg").textContent = "Error: Bridge not available. Please restart the application.";
+    EL("statusMsg").style.color = "#f38ba8";
   }
 }
 
@@ -92,6 +104,7 @@ async function analyzeFile(path) {
   showLoading("Analyzing ZIP...");
   EL("landing").style.display = "none";
   try {
+    const api = await getPywebviewApi();
     const data = await api.analyzeZip(path);
     if (!data) throw new Error("Analysis returned no data");
     state.data = data;
