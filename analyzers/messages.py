@@ -3,11 +3,11 @@
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, Iterator, List, Optional, Tuple
 
 from utils.parser import (
     load_index,
-    load_server_index,
+    load_channel_info,
     load_messages,
     iter_message_channels,
     extract_dm_username,
@@ -15,83 +15,77 @@ from utils.parser import (
 )
 
 
-def count_messages_by_dm_user(export_dir: Path) -> List[Tuple[str, int]]:
-    """Count total messages per DM user, sorted descending by count."""
+def _channel_entries(export_dir: Path) -> Iterator[Tuple[Path, str, str, list]]:
+    """Yield (channel_dir, channel_id, channel_name, messages) once per channel."""
     index = load_index(export_dir)
-    messages_dir = export_dir / "Nachrichten"
-
-    user_counts: Dict[str, int] = defaultdict(int)
-
-    for channel_dir in iter_message_channels(messages_dir):
+    for channel_dir in iter_message_channels(export_dir / "Nachrichten"):
         channel_id = dirname_to_channel_id(channel_dir.name)
         channel_name = index.get(channel_id, "Unknown")
-        username = extract_dm_username(channel_name)
-        if username is None:
-            continue
+        yield channel_dir, channel_id, channel_name, load_messages(channel_dir)
 
-        messages = load_messages(channel_dir)
-        user_counts[username] += len(messages)
 
+def _server_name(channel_dir: Path, channel_name: str) -> str:
+    """Resolve server name from the index name, falling back to channel.json."""
+    if " in " in channel_name:
+        return channel_name.rsplit(" in ", 1)[1]
+    try:
+        info = load_channel_info(channel_dir)
+    except (OSError, ValueError):
+        return "Unknown"  # channel.json missing or contains invalid JSON
+    guild = info.get("guild") if isinstance(info, dict) else None
+    if isinstance(guild, dict):
+        return guild.get("name", "Unknown")
+    return "Unknown"
+
+
+def count_messages_by_dm_user(export_dir: Path) -> List[Tuple[str, int]]:
+    """Count total messages per DM user, sorted descending by count."""
+    user_counts: Dict[str, int] = defaultdict(int)
+    for _dir, _id, name, messages in _channel_entries(export_dir):
+        username = extract_dm_username(name)
+        if username is not None:
+            user_counts[username] += len(messages)
     return sorted(user_counts.items(), key=lambda x: x[1], reverse=True)
 
 
 def count_messages_by_server(export_dir: Path) -> List[Tuple[str, int]]:
     """Count total messages per server/guild, sorted descending by count."""
-    index = load_index(export_dir)
-    server_index = load_server_index(export_dir)
-    messages_dir = export_dir / "Nachrichten"
-
     server_counts: Dict[str, int] = defaultdict(int)
-
-    for channel_dir in iter_message_channels(messages_dir):
-        channel_id = dirname_to_channel_id(channel_dir.name)
-        channel_name = index.get(channel_id, "Unknown")
-
-        if extract_dm_username(channel_name) is not None:
+    for channel_dir, _id, name, messages in _channel_entries(export_dir):
+        if extract_dm_username(name) is not None:
             continue  # Skip DMs
-
-        if " in " in channel_name:
-            guild_slug = channel_name.rsplit(" in ", 1)[1]
-            server_counts[guild_slug] += len(load_messages(channel_dir))
-        else:
-            # Try to match via channel.json guild info
-            from utils.parser import load_channel_info
-
-            try:
-                info = load_channel_info(channel_dir)
-                guild = info.get("guild")
-                if guild and isinstance(guild, dict):
-                    guild_name = guild.get("name", "Unknown")
-                    server_counts[guild_name] += len(load_messages(channel_dir))
-                else:
-                    server_counts["Unknown"] += len(load_messages(channel_dir))
-            except Exception:
-                server_counts["Unknown"] += len(load_messages(channel_dir))
-
+        server_counts[_server_name(channel_dir, name)] += len(messages)
     return sorted(server_counts.items(), key=lambda x: x[1], reverse=True)
 
 
 def count_messages_by_channel(export_dir: Path) -> List[Tuple[str, str, int]]:
     """Count messages per channel, returns (channel_id, channel_name, count)."""
-    index = load_index(export_dir)
-    messages_dir = export_dir / "Nachrichten"
-
-    results = []
-    for channel_dir in iter_message_channels(messages_dir):
-        channel_id = dirname_to_channel_id(channel_dir.name)
-        channel_name = index.get(channel_id, "Unknown")
-        messages = load_messages(channel_dir)
-        results.append((channel_id, channel_name, len(messages)))
-
+    results = [
+        (channel_id, name, len(messages))
+        for _dir, channel_id, name, messages in _channel_entries(export_dir)
+    ]
     return sorted(results, key=lambda x: x[2], reverse=True)
 
 
-def _parse_timestamp(ts: str) -> datetime:
+def _parse_timestamp(ts: str) -> Optional[datetime]:
     """Parse 'YYYY-MM-DD HH:MM:SS' to datetime."""
     try:
         return datetime.strptime(ts, "%Y-%m-%d %H:%M:%S")
     except ValueError:
         return None
+
+
+_GRANULARITY_FORMATS = {"day": "%Y-%m-%d", "month": "%Y-%m", "year": "%Y"}
+
+
+def _granularity_format(granularity: str) -> str:
+    """Map a granularity name to its strftime format, defaulting to month."""
+    return _GRANULARITY_FORMATS.get(granularity, "%Y-%m")
+
+
+def _timeline_key(ts: str, fmt: str) -> Optional[str]:
+    dt = _parse_timestamp(ts)
+    return dt.strftime(fmt) if dt else None
 
 
 def message_timeline(export_dir: Path, granularity: str = "month") -> Dict[str, int]:
@@ -100,33 +94,58 @@ def message_timeline(export_dir: Path, granularity: str = "month") -> Dict[str, 
     granularity: 'day', 'month', 'year'
     Returns dict of period -> count sorted chronologically.
     """
-    messages_dir = export_dir / "Nachrichten"
+    fmt = _granularity_format(granularity)
     counts: Dict[str, int] = defaultdict(int)
-
-    fmt = {"day": "%Y-%m-%d", "month": "%Y-%m", "year": "%Y"}.get(granularity, "%Y-%m")
-
-    for channel_dir in iter_message_channels(messages_dir):
-        messages = load_messages(channel_dir)
+    for _dir, _id, _name, messages in _channel_entries(export_dir):
         for msg in messages:
-            ts = msg.get("Timestamp", "")
-            if ts:
-                dt = _parse_timestamp(ts)
-                if dt:
-                    key = dt.strftime(fmt)
-                    counts[key] += 1
-
+            key = _timeline_key(msg.get("Timestamp", ""), fmt)
+            if key:
+                counts[key] += 1
     return dict(sorted(counts.items()))
 
 
-def message_summary(export_dir: Path) -> dict:
-    """Return a complete message summary with all stats."""
-    dm = count_messages_by_dm_user(export_dir)
-    server = count_messages_by_server(export_dir)
-    total = sum(c for _, c in dm) + sum(c for _, c in server)
+def full_summary(export_dir: Path, granularity: str = "month") -> dict:
+    """All message stats in a single pass over the export."""
+    fmt = _granularity_format(granularity)
+
+    user_counts: Dict[str, int] = defaultdict(int)
+    server_counts: Dict[str, int] = defaultdict(int)
+    channels: List[Tuple[str, str, int]] = []
+    timeline: Dict[str, int] = defaultdict(int)
+
+    for channel_dir, channel_id, name, messages in _channel_entries(export_dir):
+        count = len(messages)
+        channels.append((channel_id, name, count))
+
+        username = extract_dm_username(name)
+        if username is not None:
+            user_counts[username] += count
+        else:
+            server_counts[_server_name(channel_dir, name)] += count
+
+        for msg in messages:
+            key = _timeline_key(msg.get("Timestamp", ""), fmt)
+            if key:
+                timeline[key] += 1
+
+    dm_users = sorted(user_counts.items(), key=lambda x: x[1], reverse=True)
+    servers = sorted(server_counts.items(), key=lambda x: x[1], reverse=True)
+    dm_total = sum(user_counts.values())
+    server_total = sum(server_counts.values())
+
     return {
-        "total_messages": total,
-        "dm_users": dm,
-        "servers": server,
-        "dm_total": sum(c for _, c in dm),
-        "server_total": sum(c for _, c in server),
+        "total_messages": dm_total + server_total,
+        "dm_total": dm_total,
+        "server_total": server_total,
+        "dm_users": dm_users,
+        "servers": servers,
+        "channels": sorted(channels, key=lambda x: x[2], reverse=True),
+        "timeline": dict(sorted(timeline.items())),
     }
+
+
+def message_summary(export_dir: Path) -> dict:
+    """Message totals with per-user and per-server breakdowns."""
+    s = full_summary(export_dir)
+    return {k: s[k] for k in
+            ("total_messages", "dm_total", "server_total", "dm_users", "servers")}

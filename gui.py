@@ -15,18 +15,14 @@ import tkinter as tk
 import zipfile
 from pathlib import Path
 from tkinter import filedialog, ttk
+from typing import Optional
 
 ANALYZER_DIR = Path(__file__).parent.resolve()
 sys.path.insert(0, str(ANALYZER_DIR))
 
-from analyzers.messages import (
-    count_messages_by_dm_user,
-    count_messages_by_server,
-    count_messages_by_channel,
-    message_timeline,
-    message_summary,
-)
+from analyzers.messages import full_summary
 from analyzers.voice import voice_summary
+from utils.formatting import format_hours_minutes
 
 # -- Colors (Catppuccin Mocha) -------------------------------------------
 C = {
@@ -45,7 +41,6 @@ C = {
     "peach":    "#fab387",
     "teal":     "#94e2d5",
     "base":     "#11111b",
-    "crust":    "#11111b",
 }
 BAR_COLORS = [C["blue"], C["green"], C["mauve"], C["peach"], C["teal"],
               C["yellow"], C["red"], C["overlay"], C["blue"], C["green"]]
@@ -221,7 +216,8 @@ class DashboardApp:
             with zipfile.ZipFile(zip_path, "r") as zf:
                 zf.extractall(extract_dir)
         except (zipfile.BadZipFile, OSError) as e:
-            self.root.after(0, lambda: self._show_error(f"Invalid ZIP: {e}"))
+            error_msg = f"Invalid ZIP: {e}"
+            self.root.after(0, lambda: self._show_error(error_msg))
             shutil.rmtree(extract_dir, ignore_errors=True)
             return
 
@@ -231,21 +227,21 @@ class DashboardApp:
         sys.stderr = self._stderr_buf
 
         try:
-            msg = message_summary(export_dir)
-            dm_users = count_messages_by_dm_user(export_dir)
-            servers = count_messages_by_server(export_dir)
-            channels = count_messages_by_channel(export_dir)
-            timeline = message_timeline(export_dir, "month")
+            msg = full_summary(export_dir)
             voice = voice_summary(export_dir)
+        except Exception as e:
+            error_msg = f"Analysis failed: {e}"
+            shutil.rmtree(extract_dir, ignore_errors=True)
+            self.root.after(0, lambda: self._show_error(error_msg))
+            return
         finally:
             sys.stderr = old_stderr
 
         data = {
             "msg": msg,
-            "dm_users": dm_users,
-            "servers": servers,
-            "channels": channels,
-            "timeline": timeline,
+            "dm_users": msg["dm_users"],
+            "servers": msg["servers"],
+            "timeline": msg["timeline"],
             "voice": voice,
         }
 
@@ -262,6 +258,7 @@ class DashboardApp:
         return extract_dir
 
     def _show_error(self, msg: str):
+        self._stderr_buf = None  # stop the status poller
         self.progress.stop()
         self.progress.pack_forget()
         self.status.pack_forget()
@@ -359,6 +356,33 @@ class DashboardApp:
             tk.Label(card, text=value, font=("Segoe UI", 22, "bold"),
                      fg=color, bg=C["surface"], anchor="w").pack(fill=tk.X)
 
+    def _bar_row(self, body, name: str, value: float, max_value: float,
+                 index: int, *, name_width: int, bar_width: int = 320,
+                 rank: Optional[int] = None, tooltip: Optional[str] = None):
+        """Render one leaderboard row: optional rank, name label, proportional bar."""
+        row = tk.Frame(body, bg=C["base"])
+        row.pack(fill=tk.X, pady=1, padx=2)
+
+        if rank is not None:
+            tk.Label(row, text=f"{rank:>2}", font=("Consolas", 10),
+                     fg=C["dim"], bg=C["base"], width=3,
+                     anchor="e").pack(side=tk.LEFT)
+
+        tk.Label(row, text=name, font=("Segoe UI", 10),
+                 fg=C["text"], bg=C["base"], anchor="w",
+                 width=name_width).pack(side=tk.LEFT, padx=(8, 4))
+
+        fill_w = int(value / max_value * bar_width)
+        bar = tk.Canvas(row, bg=C["base"], height=16, width=bar_width,
+                        highlightthickness=0, bd=0)
+        bar.pack(side=tk.LEFT)
+        if fill_w > 0:
+            bar.create_rectangle(0, 2, fill_w, 14,
+                                 fill=BAR_COLORS[index % len(BAR_COLORS)],
+                                 outline="", width=0)
+        if tooltip:
+            ToolTip(bar, tooltip)
+
     def _section_dm_leaderboard(self, data):
         dm_users = data["dm_users"]
         total = sum(c for _, c in dm_users)
@@ -369,26 +393,9 @@ class DashboardApp:
         max_count = top[0][1] if top else 1
 
         for i, (name, count) in enumerate(top):
-            row = tk.Frame(body, bg=C["base"])
-            row.pack(fill=tk.X, pady=1, padx=2)
-
-            rank = tk.Label(row, text=f"{i+1:>2}", font=("Consolas", 10),
-                            fg=C["dim"], bg=C["base"], width=3, anchor="e")
-            rank.pack(side=tk.LEFT)
-
-            uname = tk.Label(row, text=name[:24], font=("Segoe UI", 10),
-                             fg=C["text"], bg=C["base"], anchor="w", width=26)
-            uname.pack(side=tk.LEFT, padx=(8, 4))
-
-            bar_w = int(count / max_count * 320)
-            bar = tk.Canvas(row, bg=C["base"], height=16, width=320,
-                             highlightthickness=0, bd=0)
-            bar.pack(side=tk.LEFT)
-            color = BAR_COLORS[i % len(BAR_COLORS)]
-            if bar_w > 0:
-                bar.create_rectangle(0, 2, bar_w, 14, fill=color, outline="",
-                                     width=0)
-            ToolTip(bar, f"{name}: {count:,} messages")
+            self._bar_row(body, name[:24], count, max_count, i,
+                          name_width=26, rank=i + 1,
+                          tooltip=f"{name}: {count:,} messages")
 
     def _section_servers(self, data):
         servers = [(n, c) for n, c in data["servers"] if n not in ("Direct Messages", "Unknown")]
@@ -400,22 +407,9 @@ class DashboardApp:
         max_count = top[0][1] if top else 1
 
         for i, (name, count) in enumerate(top):
-            row = tk.Frame(body, bg=C["base"])
-            row.pack(fill=tk.X, pady=1, padx=2)
-
-            uname = tk.Label(row, text=name[:30], font=("Segoe UI", 10),
-                             fg=C["text"], bg=C["base"], anchor="w", width=32)
-            uname.pack(side=tk.LEFT, padx=(8, 4))
-
-            bar_w = int(count / max_count * 320)
-            bar = tk.Canvas(row, bg=C["base"], height=16, width=320,
-                             highlightthickness=0, bd=0)
-            bar.pack(side=tk.LEFT)
-            color = BAR_COLORS[i % len(BAR_COLORS)]
-            if bar_w > 0:
-                bar.create_rectangle(0, 2, bar_w, 14, fill=color, outline="",
-                                     width=0)
-            ToolTip(bar, f"{name}: {count:,} messages")
+            self._bar_row(body, name[:30], count, max_count, i,
+                          name_width=32,
+                          tooltip=f"{name}: {count:,} messages")
 
     def _section_voice(self, data):
         v = data["voice"]
@@ -424,9 +418,8 @@ class DashboardApp:
         sv_entries = [c for c in channel_durations if c["name_type"] == "server"]
 
         total_voice_sec = sum(c["duration_seconds"] for c in channel_durations)
-        total_h = total_voice_sec // 3600
-        total_m = (total_voice_sec % 3600) // 60
-        self._section_header("Voice Calls", f"{total_h}h {total_m}m total")
+        self._section_header("Voice Calls",
+                             f"{format_hours_minutes(total_voice_sec)} total")
         body = self._section_body()
 
         if dm_entries:
@@ -438,26 +431,10 @@ class DashboardApp:
             max_sec = top[0]["duration_seconds"] if top else 1
 
             for i, c in enumerate(top):
-                row = tk.Frame(body, bg=C["base"])
-                row.pack(fill=tk.X, pady=1, padx=2)
-
-                uname = tk.Label(row, text=c["name"][:24],
-                                 font=("Segoe UI", 10), fg=C["text"],
-                                 bg=C["base"], anchor="w", width=26)
-                uname.pack(side=tk.LEFT, padx=(8, 4))
-
-                bar_w = int(c["duration_seconds"] / max_sec * 300)
-                bar = tk.Canvas(row, bg=C["base"], height=16, width=300,
-                                 highlightthickness=0, bd=0)
-                bar.pack(side=tk.LEFT)
-                color = BAR_COLORS[i % len(BAR_COLORS)]
-                if bar_w > 0:
-                    bar.create_rectangle(0, 2, bar_w, 14, fill=color,
-                                         outline="", width=0)
-
-                h = c["duration_seconds"] // 3600
-                m = (c["duration_seconds"] % 3600) // 60
-                ToolTip(bar, f"{c['name']}: {h}h {m}m ({c['call_count']} calls)")
+                duration = format_hours_minutes(c["duration_seconds"])
+                self._bar_row(body, c["name"][:24], c["duration_seconds"],
+                              max_sec, i, name_width=26, bar_width=300,
+                              tooltip=f"{c['name']}: {duration} ({c['call_count']} calls)")
 
         if sv_entries:
             tk.Label(body, text="Server Channels", font=("Segoe UI", 9, "bold"),
@@ -474,9 +451,8 @@ class DashboardApp:
                                  width=38)
                 uname.pack(side=tk.LEFT, padx=(8, 4))
 
-                h = c["duration_seconds"] // 3600
-                m = (c["duration_seconds"] % 3600) // 60
-                ToolTip(row, f"{c['name']}: {h}h {m}m ({c['call_count']} sessions)")
+                duration = format_hours_minutes(c["duration_seconds"])
+                ToolTip(row, f"{c['name']}: {duration} ({c['call_count']} sessions)")
 
     def _section_timeline(self, data):
         timeline = data["timeline"]

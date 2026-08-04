@@ -6,14 +6,21 @@ RTC-relevant events in Python. Detects voice call sessions from
 """
 
 import json
+import re
 import subprocess
-from collections import defaultdict
+import sys
+from collections import Counter, defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, Iterator, List, Optional
 
-from utils.parser import iter_analytics_files, load_json
+from utils.formatting import format_hours_minutes
+from utils.parser import (
+    extract_dm_username,
+    iter_analytics_files,
+    load_index,
+)
 
 
 @dataclass
@@ -25,7 +32,7 @@ class VoiceSession:
     duration_seconds: float
 
 
-def _parse_ts(ts_str) -> Optional[datetime]:
+def _parse_ts(ts_str: object) -> Optional[datetime]:
     """Parse various timestamp formats from analytics events."""
     if not ts_str:
         return None
@@ -45,151 +52,117 @@ def _parse_ts(ts_str) -> Optional[datetime]:
     return None
 
 
-def _stream_rtc_events_via_grep(
-    activity_dir: Path, progress_callback=None
-) -> Iterator[tuple]:
+def _iter_matching_lines(filepath: Path, pattern: str) -> Iterator[str]:
+    """Python fallback: yield lines matching pattern, streamed line by line."""
+    rx = re.compile(pattern)
+    with open(filepath, "r", encoding="utf-8") as f:
+        for line in f:
+            if rx.search(line):
+                yield line.strip()
+
+
+def _grep_json_lines(
+    files: List[Path], pattern: str, progress_callback=None
+) -> Iterator[dict]:
     """
-    Use grep to pre-filter analytics files for RTC events, then parse.
-    Much faster than Python line-by-line for 4GB+ files on slow mounts.
+    Yield parsed JSON objects from lines matching pattern across files.
+    Uses grep to pre-filter (much faster than Python for 4GB+ files on slow
+    mounts); falls back to a Python scan when grep is missing or times out.
     """
-    files = iter_analytics_files(activity_dir)
     total_files = len(files)
 
     for fi, filepath in enumerate(files):
-        fsize = filepath.stat().st_size
-        if fsize == 0:
-            if progress_callback:
-                progress_callback(fi + 1, total_files)
-            continue
+        if filepath.stat().st_size > 0:
+            lines: Optional[Iterator[str]] = None
+            try:
+                proc = subprocess.run(
+                    ["grep", "-E", pattern, str(filepath)],
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                )
+                lines = iter(proc.stdout.splitlines())
+            except (subprocess.TimeoutExpired, FileNotFoundError):
+                lines = None
 
-        try:
-            proc = subprocess.Popen(
-                ["grep", "-E", "RTC_CONNECTED|RTC_DISCONNECTED", str(filepath)],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.DEVNULL,
-                text=True,
-            )
-            for line in proc.stdout:
-                line = line.strip()
+            if lines is None:
+                lines = _iter_matching_lines(filepath, pattern)
+
+            for line in lines:
                 if not line:
                     continue
                 try:
                     ev = json.loads(line)
-                except Exception:
+                except json.JSONDecodeError:
                     continue
-
-                rtc = ev.get("client_rtc_state")
-                sid = ev.get("client_heartbeat_session_id")
-                uptime = int(ev.get("uptime_process_renderer", 0))
-                init_ts_raw = ev.get("client_heartbeat_initialization_timestamp", "")
-
-                if sid and rtc:
-                    yield (str(sid), uptime, str(rtc), str(init_ts_raw))
-
-            proc.wait(timeout=30)
-        except (subprocess.TimeoutExpired, FileNotFoundError):
-            # grep not available or timed out — fallback to Python
-            with open(filepath, "r", encoding="utf-8") as f:
-                for line in f:
-                    if "RTC_CONNECTED" not in line and "RTC_DISCONNECTED" not in line:
-                        continue
-                    line = line.strip()
-                    if not line:
-                        continue
-                    try:
-                        ev = json.loads(line)
-                    except Exception:
-                        continue
-                    rtc = ev.get("client_rtc_state")
-                    sid = ev.get("client_heartbeat_session_id")
-                    uptime = int(ev.get("uptime_process_renderer", 0))
-                    init_ts_raw = ev.get("client_heartbeat_initialization_timestamp", "")
-                    if sid and rtc:
-                        yield (str(sid), uptime, str(rtc), str(init_ts_raw))
+                if isinstance(ev, dict):
+                    yield ev
 
         if progress_callback:
             progress_callback(fi + 1, total_files)
+
+
+def _stream_rtc_events_via_grep(
+    activity_dir: Path, progress_callback=None
+) -> Iterator[tuple]:
+    """
+    Stream RTC heartbeat events from analytics files.
+    Yields: (session_id, uptime_seconds, rtc_state, init_timestamp)
+    """
+    files = iter_analytics_files(activity_dir)
+    for ev in _grep_json_lines(files, r"RTC_CONNECTED|RTC_DISCONNECTED", progress_callback):
+        sid = ev.get("client_heartbeat_session_id")
+        rtc = ev.get("client_rtc_state")
+        if sid and rtc:
+            yield (
+                str(sid),
+                int(ev.get("uptime_process_renderer", 0)),
+                str(rtc),
+                str(ev.get("client_heartbeat_initialization_timestamp", "")),
+            )
 
 
 def _stream_leave_voice_events(
     activity_dir: Path, progress_callback=None
 ) -> Iterator[tuple]:
     """
-    Use grep to pre-filter analytics files for leave_voice_channel events.
-    These events contain per-channel call duration data.
-    Yields: (channel_id: str, guild_id: str, duration_ms: int, timestamp: str)
+    Stream leave_voice_channel events with per-channel call durations.
+    Only scans subdirectories known to contain these events — the large
+    analytics/ folder holds client heartbeats and would take minutes to grep.
+    Yields: (channel_id, guild_id, duration_ms, timestamp)
     """
-    import os as _os
-
-    # Only scan subdirectories known to contain leave_voice_channel events.
-    # Skip the large analytics/ folder (client heartbeat events) which doesn't
-    # have channel-level voice data but would take minutes to grep through.
-    target_dirs = ["tns", "reporting", "modeling"]
-    files = []
-    for sub in target_dirs:
+    files: List[Path] = []
+    for sub in ("tns", "reporting", "modeling"):
         sub_path = activity_dir / sub
         if sub_path.exists():
-            for root, _dirs, filenames in _os.walk(sub_path):
-                for fname in filenames:
-                    if fname.endswith(".json"):
-                        files.append(Path(root) / fname)
-
+            files.extend(iter_analytics_files(sub_path))
     files = sorted(files)
-    total_files = len(files)
 
-    for fi, filepath in enumerate(files):
-        fsize = filepath.stat().st_size
-        if fsize == 0:
-            if progress_callback:
-                progress_callback(fi + 1, total_files)
-            continue
-
-        try:
-            proc = subprocess.Popen(
-                ["grep", "leave_voice_channel", str(filepath)],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.DEVNULL,
-                text=True,
+    for ev in _grep_json_lines(files, "leave_voice_channel", progress_callback):
+        cid = ev.get("channel_id")
+        dur = ev.get("duration", 0)
+        if cid and dur:
+            yield (
+                str(cid),
+                str(ev.get("guild_id") or ""),
+                int(dur),
+                str(ev.get("timestamp", "")),
             )
-            for line in proc.stdout:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    ev = json.loads(line)
-                except Exception:
-                    continue
 
-                cid = ev.get("channel_id")
-                gid = ev.get("guild_id", "")
-                dur = ev.get("duration", 0)
-                ts = ev.get("timestamp", "")
 
-                if cid and dur:
-                    yield (str(cid), str(gid) if gid else "", int(dur), str(ts))
-
-            proc.wait(timeout=30)
-        except (subprocess.TimeoutExpired, FileNotFoundError):
-            with open(filepath, "r", encoding="utf-8") as f:
-                for line in f:
-                    if "leave_voice_channel" not in line:
-                        continue
-                    line = line.strip()
-                    if not line:
-                        continue
-                    try:
-                        ev = json.loads(line)
-                    except Exception:
-                        continue
-                    cid = ev.get("channel_id")
-                    gid = ev.get("guild_id", "")
-                    dur = ev.get("duration", 0)
-                    ts = ev.get("timestamp", "")
-                    if cid and dur:
-                        yield (str(cid), str(gid) if gid else "", int(dur), str(ts))
-
-        if progress_callback:
-            progress_callback(fi + 1, total_files)
+def _append_session(sessions: List[VoiceSession], init_dt: datetime,
+                    start_uptime: float, end_uptime: float,
+                    min_duration_seconds: int) -> None:
+    """Append a VoiceSession if its duration meets the minimum threshold."""
+    duration = end_uptime - start_uptime
+    if duration >= min_duration_seconds:
+        sessions.append(
+            VoiceSession(
+                start=init_dt + timedelta(seconds=start_uptime),
+                end=init_dt + timedelta(seconds=end_uptime),
+                duration_seconds=duration,
+            )
+        )
 
 
 def detect_voice_sessions(
@@ -208,7 +181,6 @@ def detect_voice_sessions(
         if init_ts and sid not in sessions_init_ts:
             sessions_init_ts[sid] = str(init_ts)
 
-    import sys
     print(f"\n  Found {total_rtc_events} RTC events across {len(sessions_events)} sessions.", file=sys.stderr)
 
     voice_sessions: List[VoiceSession] = []
@@ -232,28 +204,13 @@ def detect_voice_sessions(
             if rtc == "RTC_CONNECTED" and start_uptime is None:
                 start_uptime = uptime
             elif rtc != "RTC_CONNECTED" and start_uptime is not None:
-                duration = uptime - start_uptime
-                if duration >= min_duration_seconds:
-                    voice_sessions.append(
-                        VoiceSession(
-                            start=init_dt + timedelta(seconds=start_uptime),
-                            end=init_dt + timedelta(seconds=uptime),
-                            duration_seconds=duration,
-                        )
-                    )
+                _append_session(voice_sessions, init_dt, start_uptime, uptime,
+                                min_duration_seconds)
                 start_uptime = None
 
         if start_uptime is not None and events:
-            last_uptime = events[-1][0]
-            duration = last_uptime - start_uptime
-            if duration >= min_duration_seconds:
-                voice_sessions.append(
-                    VoiceSession(
-                        start=init_dt + timedelta(seconds=start_uptime),
-                        end=init_dt + timedelta(seconds=last_uptime),
-                        duration_seconds=duration,
-                    )
-                )
+            _append_session(voice_sessions, init_dt, start_uptime,
+                            events[-1][0], min_duration_seconds)
 
     if progress_callback:
         print("", file=sys.stderr)
@@ -271,8 +228,6 @@ def aggregate_channel_durations(
     """
     channel_totals: Dict[str, dict] = {}
 
-    import sys
-
     for cid, gid, dur_ms, ts in _stream_leave_voice_events(activity_dir, progress_callback):
         if cid not in channel_totals:
             channel_totals[cid] = {
@@ -287,26 +242,21 @@ def aggregate_channel_durations(
     if progress_callback:
         print("\n  Resolving channel names...", file=sys.stderr)
 
-    # Resolve channel names
-    index = {}
-    index_path = export_dir / "Nachrichten" / "index.json"
-    if index_path.exists():
-        index = load_json(index_path)
+    try:
+        index = load_index(export_dir)
+    except FileNotFoundError:
+        index = {}
 
     results: Dict[str, dict] = {}
     for cid, info in channel_totals.items():
         raw_name = index.get(cid, "")
-        if "Direct Message with " in raw_name:
-            # Extract username from "Direct Message with username#0"
-            base = raw_name.replace("Direct Message with ", "").strip()
-            name = base.rsplit("#", 1)[0] if "#" in base else base
-            name_type = "dm"
-        elif raw_name and raw_name not in ("Unknown channel", "None", ""):
-            name = raw_name
-            name_type = "server"
+        username = extract_dm_username(raw_name)
+        if username:
+            name, name_type = username, "dm"
+        elif raw_name and raw_name not in ("Unknown channel", "None"):
+            name, name_type = raw_name, "server"
         else:
-            name = f"#{cid}"
-            name_type = "unknown"
+            name, name_type = f"#{cid}", "unknown"
 
         results[name] = {
             "name": name,
@@ -324,8 +274,6 @@ def aggregate_channel_durations(
 
 def voice_summary(export_dir: Path) -> dict:
     """Voice activity summary. Uses grep streaming for large files."""
-    import sys
-
     activity_dir = export_dir / "Aktivität"
     if not activity_dir.exists():
         return {"total_sessions": 0, "total_duration_seconds": 0, "error": "No Aktivität directory"}
@@ -361,16 +309,12 @@ def voice_summary(export_dir: Path) -> dict:
     avg_duration = total_duration / len(sessions) if sessions else 0
     longest = max(s.duration_seconds for s in sessions) if sessions else 0
 
-    from collections import Counter
     by_day = Counter(s.start.strftime("%Y-%m-%d") for s in sessions)
-
-    hours = int(total_duration // 3600)
-    minutes = int((total_duration % 3600) // 60)
 
     return {
         "total_sessions": len(sessions),
         "total_duration_seconds": int(total_duration),
-        "total_duration_formatted": f"{hours}h {minutes}m",
+        "total_duration_formatted": format_hours_minutes(total_duration),
         "average_duration_seconds": int(avg_duration),
         "longest_session_seconds": int(longest),
         "sessions_by_day": dict(sorted(by_day.items())),

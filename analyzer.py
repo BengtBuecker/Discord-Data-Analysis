@@ -5,12 +5,12 @@ Usage:
     python analyzer.py --dir "DC Daten" messages-dm
     python analyzer.py --dir "DC Daten" messages-server
     python analyzer.py --dir "DC Daten" messages-channel
+    python analyzer.py --dir "DC Daten" messages-timeline [--granularity day|month|year]
     python analyzer.py --dir "DC Daten" voice
     python analyzer.py --dir "DC Daten" all
 """
 
 import argparse
-import json
 import sys
 from pathlib import Path
 
@@ -21,63 +21,35 @@ from analyzers.messages import (
     count_messages_by_server,
     count_messages_by_channel,
     message_timeline,
-    message_summary,
+    full_summary,
 )
 from analyzers.voice import voice_summary
+from utils.formatting import format_hours_minutes
 
 
-def print_dm_users(export_dir: Path, top: int = 50):
-    results = count_messages_by_dm_user(export_dir)
-    total = sum(c for _, c in results)
-    print(f"\n{'='*60}")
-    print(f"  DM Messages by User  (total: {total} messages)")
-    print(f"{'='*60}")
-    print(f"  {'User':<30} {'Messages':>8}  {'%':>6}")
-    print(f"  {'-'*30} {'-'*8}  {'-'*6}")
-    for username, count in results[:top]:
+def _render_ranked_table(title, col_name, rows, name_width,
+                         width=60, top=None, more_noun=None):
+    """Print a ranked name/count table with percentage column."""
+    total = sum(c for _, c in rows)
+    print(f"\n{'=' * width}")
+    print(f"  {title}  (total: {total} messages)")
+    print(f"{'=' * width}")
+    print(f"  {col_name:<{name_width}} {'Messages':>8}  {'%':>6}")
+    print(f"  {'-' * name_width} {'-' * 8}  {'-' * 6}")
+    shown = rows[:top] if top else rows
+    for name, count in shown:
+        display = name if len(name) <= name_width else name[:name_width - 3] + "..."
         pct = (count / total * 100) if total else 0
-        print(f"  {username:<30} {count:>8}  {pct:>5.1f}%")
-    if len(results) > top:
-        print(f"  ... and {len(results) - top} more users")
+        print(f"  {display:<{name_width}} {count:>8}  {pct:>5.1f}%")
+    if top and len(rows) > top:
+        print(f"  ... and {len(rows) - top} more {more_noun}")
     print()
 
 
-def print_server(export_dir: Path):
-    results = count_messages_by_server(export_dir)
-    total = sum(c for _, c in results)
-    print(f"\n{'='*60}")
-    print(f"  Messages by Server  (total: {total} messages)")
-    print(f"{'='*60}")
-    print(f"  {'Server':<40} {'Messages':>8}  {'%':>6}")
-    print(f"  {'-'*40} {'-'*8}  {'-'*6}")
-    for name, count in results:
-        pct = (count / total * 100) if total else 0
-        print(f"  {name:<40} {count:>8}  {pct:>5.1f}%")
-    print()
-
-
-def print_channels(export_dir: Path, top: int = 30):
-    results = count_messages_by_channel(export_dir)
-    total = sum(c for _, _, c in results)
-    print(f"\n{'='*80}")
-    print(f"  Messages by Channel  (total: {total} messages)")
-    print(f"{'='*80}")
-    print(f"  {'Channel':<45} {'Messages':>8}  {'%':>6}")
-    print(f"  {'-'*45} {'-'*8}  {'-'*6}")
-    for ch_id, ch_name, count in results[:top]:
-        display = ch_name if len(ch_name) < 45 else ch_name[:42] + "..."
-        pct = (count / total * 100) if total else 0
-        print(f"  {display:<45} {count:>8}  {pct:>5.1f}%")
-    if len(results) > top:
-        print(f"  ... and {len(results) - top} more channels")
-    print()
-
-
-def print_timeline(export_dir: Path, granularity: str = "month"):
-    timeline = message_timeline(export_dir, granularity)
-    print(f"\n{'='*50}")
+def _render_timeline(timeline, granularity="month"):
+    print(f"\n{'=' * 50}")
     print(f"  Message Timeline (by {granularity})")
-    print(f"{'='*50}")
+    print(f"{'=' * 50}")
     max_count = max(timeline.values()) if timeline else 1
     for period, count in timeline.items():
         bar = "#" * min(int(count / max_count * 30), 30)
@@ -85,70 +57,97 @@ def print_timeline(export_dir: Path, granularity: str = "month"):
     print()
 
 
-def print_voice(export_dir: Path):
-    summary = voice_summary(export_dir)
-    print(f"\n{'='*60}")
-    print(f"  Voice Call Analysis")
-    print(f"{'='*60}")
+def _render_duration_section(title, entries, name_width, unit):
+    if not entries:
+        return
+    print(f"\n  {title}:")
+    for c in entries:
+        duration = format_hours_minutes(c["duration_seconds"])
+        print(f"    {c['name']:<{name_width}} {duration}  ({c['call_count']} {unit})")
+
+
+def _render_voice(summary):
+    print(f"\n{'=' * 60}")
+    print("  Voice Call Analysis")
+    print(f"{'=' * 60}")
     print(f"  Total sessions:       {summary['total_sessions']}")
     print(f"  Total voice time:     {summary['total_duration_formatted']} ({summary['total_duration_seconds']}s)")
     print(f"  Average session:      {summary['average_duration_seconds'] // 60}m {summary['average_duration_seconds'] % 60}s")
     print(f"  Longest session:      {summary['longest_session_seconds'] // 60}m {summary['longest_session_seconds'] % 60}s")
 
     if summary["sessions_by_day"]:
-        print(f"\n  Sessions per day:")
+        print("\n  Sessions per day:")
         for day, count in summary["sessions_by_day"].items():
             bar = "#" * count
             print(f"    {day}  {count:>2}  {bar}")
 
-    if summary.get("channel_durations"):
-        dm_entries = [c for c in summary["channel_durations"] if c["name_type"] == "dm"]
-        server_entries = [c for c in summary["channel_durations"] if c["name_type"] == "server"]
-        unknown_entries = [c for c in summary["channel_durations"] if c["name_type"] == "unknown"]
-
-        if dm_entries:
-            print(f"\n  DM Call Duration by User:")
-            for c in dm_entries:
-                h = c["duration_seconds"] // 3600
-                m = (c["duration_seconds"] % 3600) // 60
-                print(f"    {c['name']:<30} {h}h {m}m  ({c['call_count']} calls)")
-
-        if server_entries:
-            print(f"\n  Server Voice Channel Duration:")
-            for c in server_entries:
-                h = c["duration_seconds"] // 3600
-                m = (c["duration_seconds"] % 3600) // 60
-                print(f"    {c['name']:<50} {h}h {m}m  ({c['call_count']} sessions)")
-
-        if unknown_entries:
-            print(f"\n  Other Voice Channels:")
-            for c in unknown_entries:
-                h = c["duration_seconds"] // 3600
-                m = (c["duration_seconds"] % 3600) // 60
-                print(f"    {c['name']:<50} {h}h {m}m  ({c['call_count']} sessions)")
+    durations = summary.get("channel_durations", [])
+    _render_duration_section(
+        "DM Call Duration by User",
+        [c for c in durations if c["name_type"] == "dm"], 30, "calls")
+    _render_duration_section(
+        "Server Voice Channel Duration",
+        [c for c in durations if c["name_type"] == "server"], 50, "sessions")
+    _render_duration_section(
+        "Other Voice Channels",
+        [c for c in durations if c["name_type"] == "unknown"], 50, "sessions")
 
     if summary.get("sessions"):
-        print(f"\n  Recent sessions:")
+        print("\n  Recent sessions:")
         for s in summary["sessions"][-10:]:
             print(f"    {s['start']} -- {s['duration_minutes']}min")
 
     print()
 
 
-def print_all(export_dir: Path):
-    summary = message_summary(export_dir)
-    print(f"\n{'='*60}")
-    print(f"  FULL DISCORD DATA ANALYSIS")
-    print(f"{'='*60}")
-    print(f"  Total messages sent:  {summary['total_messages']}")
-    print(f"    - DM messages:       {summary['dm_total']}")
-    print(f"    - Server messages:   {summary['server_total']}")
+def print_dm_users(export_dir: Path, top: int = 50):
+    """Print the most-messaged DM contacts, ranked."""
+    _render_ranked_table("DM Messages by User", "User",
+                         count_messages_by_dm_user(export_dir), 30,
+                         top=top, more_noun="users")
 
-    print_dm_users(export_dir)
-    print_server(export_dir)
-    print_channels(export_dir)
-    print_timeline(export_dir)
-    print_voice(export_dir)
+
+def print_server(export_dir: Path):
+    """Print message volume per server."""
+    _render_ranked_table("Messages by Server", "Server",
+                         count_messages_by_server(export_dir), 40)
+
+
+def print_channels(export_dir: Path, top: int = 30):
+    """Print detailed per-channel message counts."""
+    rows = [(name, count) for _id, name, count in count_messages_by_channel(export_dir)]
+    _render_ranked_table("Messages by Channel", "Channel", rows, 45,
+                         width=80, top=top, more_noun="channels")
+
+
+def print_timeline(export_dir: Path, granularity: str = "month"):
+    """Print message activity over time."""
+    _render_timeline(message_timeline(export_dir, granularity), granularity)
+
+
+def print_voice(export_dir: Path):
+    """Print voice call duration analysis."""
+    _render_voice(voice_summary(export_dir))
+
+
+def print_all(export_dir: Path):
+    """Print the full report: messages, servers, channels, timeline, voice."""
+    s = full_summary(export_dir)
+    print(f"\n{'=' * 60}")
+    print("  FULL DISCORD DATA ANALYSIS")
+    print(f"{'=' * 60}")
+    print(f"  Total messages sent:  {s['total_messages']}")
+    print(f"    - DM messages:       {s['dm_total']}")
+    print(f"    - Server messages:   {s['server_total']}")
+
+    _render_ranked_table("DM Messages by User", "User", s["dm_users"], 30,
+                         top=50, more_noun="users")
+    _render_ranked_table("Messages by Server", "Server", s["servers"], 40)
+    _render_ranked_table("Messages by Channel", "Channel",
+                         [(name, count) for _id, name, count in s["channels"]],
+                         45, width=80, top=30, more_noun="channels")
+    _render_timeline(s["timeline"])
+    _render_voice(voice_summary(export_dir))
 
 
 def main():
@@ -159,6 +158,7 @@ def main():
 Examples:
   python analyzer.py --dir "DC Daten" messages-dm
   python analyzer.py --dir "DC Daten" messages-server
+  python analyzer.py --dir "DC Daten" messages-timeline --granularity day
   python analyzer.py --dir "DC Daten" voice
   python analyzer.py --dir "DC Daten" all
         """,
@@ -175,8 +175,8 @@ Examples:
     sub.add_parser("messages-dm", help="Count messages per DM user")
     sub.add_parser("messages-server", help="Count messages per server")
     sub.add_parser("messages-channel", help="Count messages per channel")
-    _timeline = sub.add_parser("messages-timeline", help="Message count over time")
-    _timeline.add_argument(
+    timeline = sub.add_parser("messages-timeline", help="Message count over time")
+    timeline.add_argument(
         "--granularity",
         choices=["day", "month", "year"],
         default="month",
@@ -199,7 +199,7 @@ Examples:
         "messages-dm": lambda: print_dm_users(args.dir),
         "messages-server": lambda: print_server(args.dir),
         "messages-channel": lambda: print_channels(args.dir),
-        "messages-timeline": lambda: print_timeline(args.dir, getattr(args, "granularity", "month")),
+        "messages-timeline": lambda: print_timeline(args.dir, args.granularity),
         "voice": lambda: print_voice(args.dir),
         "all": lambda: print_all(args.dir),
     }

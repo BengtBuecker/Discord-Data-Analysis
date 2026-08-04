@@ -4,26 +4,13 @@ import json
 import os
 import re
 from pathlib import Path
-from typing import Dict, List, Optional, Iterator, Any
+from typing import Any, Dict, Iterator, List, Optional
 
 
 def load_json(path: Path) -> Any:
+    """Load and parse a JSON file."""
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
-
-
-def load_json_lines(path: Path) -> Iterator[dict]:
-    """Parse newline-delimited JSON file. Each line is a complete JSON object."""
-    with open(path, "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if line:
-                yield json.loads(line)
-
-
-def load_user(export_dir: Path) -> dict:
-    """Load the account user.json to get the data owner's ID."""
-    return load_json(export_dir / "Account" / "user.json")
 
 
 def load_index(export_dir: Path) -> Dict[str, str]:
@@ -31,17 +18,12 @@ def load_index(export_dir: Path) -> Dict[str, str]:
     return load_json(export_dir / "Nachrichten" / "index.json")
 
 
-def load_server_index(export_dir: Path) -> Dict[str, str]:
-    """Load Server/index.json mapping guild IDs to server names."""
-    return load_json(export_dir / "Server" / "index.json")
-
-
 def load_channel_info(channel_dir: Path) -> dict:
     """Load channel.json from a channel directory."""
     return load_json(channel_dir / "channel.json")
 
 
-def load_messages(channel_dir: Path) -> list[dict]:
+def load_messages(channel_dir: Path) -> List[dict]:
     """Load messages.json (JSON array) from a channel directory."""
     return load_json(channel_dir / "messages.json")
 
@@ -60,7 +42,7 @@ def dirname_to_channel_id(dirname: str) -> str:
     return dirname
 
 
-def iter_analytics_files(activity_dir: Path) -> list[Path]:
+def iter_analytics_files(activity_dir: Path) -> List[Path]:
     """Find all analytics JSONL files in the Aktivität folder structure."""
     files = []
     if not activity_dir.exists():
@@ -81,30 +63,3 @@ def extract_dm_username(channel_name: str) -> Optional[str]:
     if m:
         return m.group(1)
     return None
-
-
-def categorize_channels(index: dict, server_index: dict) -> Dict[str, list]:
-    """
-    Categorize channels by type:
-    - dm_users: map username -> [channel_ids]
-    - guild_channels: map guild_name -> [channel_ids]
-    - unknown: [channel_ids that don't match any pattern]
-    """
-    dm_users: Dict[str, list] = {}
-    guild_channels: Dict[str, list] = {}
-    unknown: list = []
-
-    for channel_id, channel_name in index.items():
-        username = extract_dm_username(channel_name)
-        if username:
-            dm_users.setdefault(username, []).append(channel_id)
-        else:
-            # Try to parse "ChannelName in ServerName" or "ChannelName"
-            if " in " in channel_name:
-                parts = channel_name.rsplit(" in ", 1)
-                server_name = parts[1]
-                guild_channels.setdefault(server_name, []).append(channel_id)
-            else:
-                unknown.append(channel_id)
-
-    return {"dm_users": dm_users, "guild_channels": guild_channels, "unknown": unknown}

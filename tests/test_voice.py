@@ -1,6 +1,5 @@
 """Tests for analyzers/voice.py — voice call analysis."""
 
-import json
 import unittest
 from datetime import datetime
 from pathlib import Path
