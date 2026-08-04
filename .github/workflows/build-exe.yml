@@ -44,8 +44,8 @@ jobs:
         with:
           name: Discord-Data-Analyzer
 
-      - name: Upload to release
+      - name: Create release and upload EXE
         run: |
-          gh release upload ${{ github.ref_name }} Discord-Data-Analyzer.exe --clobber
+          gh release create ${{ github.ref_name }} Discord-Data-Analyzer.exe --title "${{ github.ref_name }}" --generate-notes --clobber
         env:
           GH_TOKEN: ${{ github.token }}
