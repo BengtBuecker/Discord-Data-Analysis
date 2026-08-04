@@ -146,6 +146,8 @@ def print_all(export_dir: Path):
 
     print_dm_users(export_dir)
     print_server(export_dir)
+    print_channels(export_dir)
+    print_timeline(export_dir)
     print_voice(export_dir)
 
 
