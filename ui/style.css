@@ -560,6 +560,7 @@ body {
   align-items: center;
   gap: var(--sp-md);
   padding: 4px 0;
+  width: 100%;
   border-radius: var(--rd-sm);
   transition: background-color var(--tr-fast);
   cursor: pointer;
