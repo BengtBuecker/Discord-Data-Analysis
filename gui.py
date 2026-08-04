@@ -176,7 +176,6 @@ class HoverButton(tk.Canvas):
         self._is_hover = False
         self._is_pressed = False
 
-        # Measure text to determine canvas size
         dummy = tk.Label(parent, text=text, font=font)
         dummy.pack()
         dummy.update_idletasks()
@@ -194,6 +193,142 @@ class HoverButton(tk.Canvas):
         self._text_id = self.create_text(
             w / 2, h / 2, text=text, fill=fg, font=font,
         )
+
+        self.bind("<Enter>", self._on_enter)
+        self.bind("<Leave>", self._on_leave)
+        self.bind("<Button-1>", self._on_press)
+        self.bind("<ButtonRelease-1>", self._on_release)
+        self.bind("<KeyPress-space>", self._on_press)
+        self.bind("<KeyPress-Return>", self._on_press)
+        self.bind("<KeyRelease-space>", self._on_release)
+        self.bind("<KeyRelease-Return>", self._on_release)
+        self.configure(takefocus=1)
+
+    def _lighten(self, hex_color, factor):
+        h = hex_color.lstrip("#")
+        r = min(255, int(int(h[0:2], 16) + (255 - int(h[0:2], 16)) * factor))
+        g = min(255, int(int(h[2:4], 16) + (255 - int(h[2:4], 16)) * factor))
+        b = min(255, int(int(h[4:6], 16) + (255 - int(h[4:6], 16)) * factor))
+        return f"#{r:02x}{g:02x}{b:02x}"
+
+    def _draw(self, bg_color):
+        self.delete("bg_rect")
+        w = int(self["width"])
+        h = int(self["height"])
+        if self._radius > 0:
+            self.create_rounded_rect(
+                0, 0, w, h, self._radius, fill=bg_color,
+                outline=self._border_color if self._border_width else "",
+                width=self._border_width, tags="bg_rect",
+            )
+        else:
+            self.create_rectangle(
+                0, 0, w, h, fill=bg_color,
+                outline=self._border_color if self._border_width else "",
+                width=self._border_width, tags="bg_rect",
+            )
+        self.tag_lower("bg_rect")
+
+    def create_rounded_rect(self, x1, y1, x2, y2, r, **kw):
+        points = (
+            x1 + r, y1, x2 - r, y1,
+            x2 - r, y1, x2, y1, x2, y1 + r,
+            x2, y2 - r, x2, y2, x2 - r, y2,
+            x1 + r, y2, x1, y2, x1, y2 - r,
+            x1, y1 + r, x1, y1, x1 + r, y1,
+        )
+        return self.create_polygon(points, smooth=True, **kw)
+
+    def _on_enter(self, event=None):
+        self._is_hover = True
+        self._draw(self._hover_bg)
+        self.itemconfigure(self._text_id, fill=self._hover_fg)
+
+    def _on_leave(self, event=None):
+        self._is_hover = False
+        self._is_pressed = False
+        self._draw(self._bg)
+        self.itemconfigure(self._text_id, fill=self._fg)
+
+    def _on_press(self, event=None):
+        if not self._is_pressed:
+            self._is_pressed = True
+            self._draw(self._lighten(self._hover_bg, -0.1))
+
+    def _on_release(self, event=None):
+        if self._is_pressed:
+            self._is_pressed = False
+            self._draw(self._hover_bg if self._is_hover else self._bg)
+            if self._command:
+                self._command()
+
+    def configure(self, **kw):
+        if "state" in kw:
+            state = kw["state"]
+            if state == tk.DISABLED:
+                self.unbind("<Enter>")
+                self.unbind("<Leave>")
+                self.unbind("<Button-1>")
+                self.unbind("<ButtonRelease-1>")
+                self.unbind("<KeyPress-space>")
+                self.unbind("<KeyPress-Return>")
+                self.unbind("<KeyRelease-space>")
+                self.unbind("<KeyRelease-Return>")
+                self.configure(cursor="")
+                self._draw(CLR["overlay_dim"])
+                self.itemconfigure(self._text_id, fill=CLR["disabled"])
+            else:
+                self.bind("<Enter>", self._on_enter)
+                self.bind("<Leave>", self._on_leave)
+                self.bind("<Button-1>", self._on_press)
+                self.bind("<ButtonRelease-1>", self._on_release)
+                self.bind("<KeyPress-space>", self._on_press)
+                self.bind("<KeyPress-Return>", self._on_press)
+                self.bind("<KeyRelease-space>", self._on_release)
+                self.bind("<KeyRelease-Return>", self._on_release)
+                self.configure(cursor="hand2")
+        super().configure(**{k: v for k, v in kw.items() if k != "state"})
+
+
+class SortableHeader(tk.Frame):
+    """Clickable section header with sort direction indicator (▲/▼/○)."""
+
+    SORT_NONE = 0
+    SORT_ASC = 1
+    SORT_DESC = 2
+
+    def __init__(self, parent, title: str, subtitle: str = "",
+                 *, on_sort=None, sort_key: str = "default",
+                 text_color=CLR["text"], bg_color=CLR["bg"],
+                 **kw):
+        super().__init__(parent, bg=bg_color, cursor="hand2", **kw)
+        self._title = title
+        self._subtitle = subtitle
+        self._on_sort = on_sort
+        self._sort_key = sort_key
+        self._sort_state = self.SORT_NONE
+        self._text_color = text_color
+        self._bg = bg_color
+        self._hover = False
+
+        self.title_lbl = tk.Label(
+            self, text=title, font=FN["h3"],
+            fg=text_color, bg=bg_color, anchor="w",
+        )
+        self.title_lbl.pack(side=tk.LEFT)
+
+        self.sort_indicator = tk.Label(
+            self, text="○", font=FN["caption"],
+            fg=CLR["dim"], bg=bg_color, width=2,
+        )
+        self.sort_indicator.pack(side=tk.LEFT, padx=(SP["xs"], 0))
+
+        if subtitle:
+            self.sub_lbl = tk.Label(
+                self, text=subtitle, font=FN["body_bold"],
+                fg=CLR["accent"], bg=bg_color,
+            )
+            self.sub_lbl.pack(side=tk.LEFT, padx=(SP["md"], 0))
 
         self.bind("<Enter>", self._on_enter)
         self.bind("<Leave>", self._on_leave)
@@ -279,15 +414,18 @@ class FilterChip(tk.Canvas):
         self.bind("<Enter>", self._on_enter)
         self.bind("<Leave>", self._on_leave)
         self.bind("<Button-1>", self._on_click)
+        self.configure(takefocus=1)
+        self.bind("<KeyPress-space>", self._on_click)
+        self.bind("<KeyPress-Return>", self._on_click)
 
     def create_rounded_rect(self, x1, y1, x2, y2, r, **kw):
-        points = [
+        points = (
             x1 + r, y1, x2 - r, y1,
             x2 - r, y1, x2, y1, x2, y1 + r,
             x2, y2 - r, x2, y2, x2 - r, y2,
             x1 + r, y2, x1, y2, x1, y2 - r,
             x1, y1 + r, x1, y1, x1 + r, y1,
-        ]
+        )
         return self.create_polygon(points, smooth=True, **kw)
 
     @property
