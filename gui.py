@@ -5,6 +5,7 @@ Zero-dependency modern dashboard. Select your Discord GDPR ZIP,
 get a visual breakdown of messages, voice calls, and servers.
 """
 
+import io
 import os
 import shutil
 import sys
@@ -193,7 +194,23 @@ class DashboardApp:
         self.status.pack()
         self.status.configure(text="Extracting ZIP...", fg=C["dim"])
 
+        self._stderr_buf = io.StringIO()
+        self.root.after(200, self._poll_stderr)
+
         threading.Thread(target=self._run_analysis, args=(path,), daemon=True).start()
+
+    def _poll_stderr(self):
+        if not hasattr(self, '_stderr_buf') or self._stderr_buf is None:
+            return
+        text = self._stderr_buf.getvalue()
+        if text:
+            last_line = text.strip().split("\n")[-1].strip()
+            if last_line and "\r" in last_line:
+                last_line = last_line.rsplit("\r", 1)[-1].strip()
+            if last_line:
+                self.status.configure(text=last_line)
+        if not hasattr(self, '_data') or self._data is None:
+            self.root.after(200, self._poll_stderr)
 
     def _run_analysis(self, zip_path: Path):
         extract_dir = Path(tempfile.mkdtemp(prefix="discord_export_"))
@@ -207,20 +224,19 @@ class DashboardApp:
 
         export_dir = self._find_export_root(extract_dir)
 
-        def tick(msg):
-            self.root.after(0, lambda: self.status.configure(text=msg, fg=C["dim"]))
+        old_stderr = sys.stderr
+        sys.stderr = self._stderr_buf
 
-        tick("Counting messages...")
-        msg = message_summary(export_dir)
-        dm_users = count_messages_by_dm_user(export_dir)
-        servers = count_messages_by_server(export_dir)
-        channels = count_messages_by_channel(export_dir)
-        timeline = message_timeline(export_dir, "month")
+        try:
+            msg = message_summary(export_dir)
+            dm_users = count_messages_by_dm_user(export_dir)
+            servers = count_messages_by_server(export_dir)
+            channels = count_messages_by_channel(export_dir)
+            timeline = message_timeline(export_dir, "month")
+            voice = voice_summary(export_dir)
+        finally:
+            sys.stderr = old_stderr
 
-        tick("Analyzing voice activity...")
-        voice = voice_summary(export_dir)
-
-        tick("Building dashboard...")
         data = {
             "msg": msg,
             "dm_users": dm_users,
