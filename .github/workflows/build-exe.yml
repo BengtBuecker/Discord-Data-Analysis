@@ -22,12 +22,13 @@ jobs:
           python-version: "3.12"
 
       - name: Install dependencies
-        run: pip install pyinstaller pywebview pythonnet
+        run: pip install pyinstaller pywebview
 
       - name: Build EXE
-        run: pyinstaller --onefile --windowed --paths . --add-data "ui/index.html;ui" --add-data "ui/style.css;ui" --add-data "ui/app.js;ui" --collect-all webview --hidden-import analyzers.messages --hidden-import analyzers.voice --hidden-import utils.parser --hidden-import utils.formatting --name "Discord-Data-Analyzer" main.py
+        run: pyinstaller --onefile --windowed --add-data "ui/index.html;ui" --add-data "ui/style.css;ui" --add-data "ui/app.js;ui" --hidden-import analyzers --hidden-import analyzers.messages --hidden-import analyzers.voice --hidden-import utils --hidden-import utils.parser --hidden-import utils.formatting --name "Discord-Data-Analyzer" main.py
 
       - name: Verify EXE exists
+        shell: bash
         run: ls -la dist/Discord-Data-Analyzer.exe
 
       - name: Upload artifact
