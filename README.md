@@ -22,7 +22,7 @@
 
 ### Voice Call Breakdown
 
-The `voice` command now shows **who you actually talked to**, not just total airtime:
+The `voice` command shows **who you actually talked to**, not just total airtime:
 
 - **DM Call Duration by User** — ranked list of every person you called, with total hours and call count
 - **Server Voice Channel Duration** — per-channel time across every server
@@ -30,9 +30,8 @@ The `voice` command now shows **who you actually talked to**, not just total air
 
 ```
 DM Call Duration by User:
-  thvndabolt           378h 35m  (356 calls)
-  ollicorn             210h 51m  (328 calls)
-  herrgrimel           100h 43m  (69 calls)
+  user123             378h 35m  (356 calls)
+  friend42            210h 51m  (328 calls)
   ...
 ```
 
@@ -110,13 +109,13 @@ python analyzer.py --dir "DC Daten" messages-timeline --granularity year
     ...
 
   DM Call Duration by User:
-    thvndabolt           378h 35m  (356 calls)
-    ollicorn             210h 51m  (328 calls)
+    user123              378h 35m  (356 calls)
+    friend42             210h 51m  (328 calls)
     ...
 
   Server Voice Channel Duration:
-    Gaming in delete riot pls       866h 6m  (908 sessions)
-    goon corner in Precise Gunplay  619h 9m  (472 sessions)
+    general in MyServer              866h 6m  (908 sessions)
+    voice-chat in OtherServer        619h 9m  (472 sessions)
     ...
 
   Recent sessions:
