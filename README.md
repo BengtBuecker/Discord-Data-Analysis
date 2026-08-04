@@ -1,6 +1,6 @@
 <p align="center">
   <img src="https://img.shields.io/badge/python-3.9+-blue.svg" alt="Python 3.9+">
-  <img src="https://img.shields.io/badge/dependencies-none-brightgreen.svg" alt="Zero Dependencies">
+  <img src="https://img.shields.io/badge/dependencies-pywebview-blue.svg" alt="PyWebView">
   <img src="https://img.shields.io/badge/privacy-local-9cf.svg" alt="100% Local">
   <img src="https://img.shields.io/badge/desktop-GUI-89b4fa.svg" alt="Desktop GUI">
 </p>
@@ -47,7 +47,8 @@ DM Call Duration by User:
 Or run from source:
 
 ```bash
-python gui.py
+pip install pywebview
+python main.py
 ```
 
 ### Command Line
@@ -58,13 +59,13 @@ cd Discord-Data-Analysis
 python analyzer.py --dir "path/to/discord/export" all
 ```
 
-> **Prerequisites**: Python 3.9+ — nothing else. Stdlib only. Tkinter ships with Python on Windows.
+> **Prerequisites**: Python 3.9+, `pip install pywebview` for the desktop GUI. The CLI analyzer (`python analyzer.py`) uses stdlib only — zero dependencies.
 
 ### Build Your Own .exe
 
 ```bash
-pip install pyinstaller
-pyinstaller --onefile --windowed --name "Discord-Data-Analyzer" gui.py
+pip install pyinstaller pywebview
+pyinstaller --onefile --windowed --name "Discord-Data-Analyzer" main.py
 # → dist/Discord-Data-Analyzer.exe
 ```
 
