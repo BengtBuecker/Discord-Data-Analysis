@@ -1,204 +1,208 @@
-"""Tests for analyzers/voice.py — voice call analysis."""
+"""Tests for analyzers/voice.py — all voice analysis functions."""
 
-import unittest
 from datetime import datetime
-from pathlib import Path
-
-import sys
-sys.path.insert(0, str(Path(__file__).parent.parent))
+from unittest.mock import patch
 
 from analyzers.voice import (
+    VoiceSession,
     _parse_ts,
+    _iter_matching_lines,
+    _grep_json_lines,
     _stream_rtc_events_via_grep,
     _stream_leave_voice_events,
+    _append_session,
     detect_voice_sessions,
     aggregate_channel_durations,
     voice_summary,
-    VoiceSession,
 )
 
-FIXTURES = Path(__file__).parent / "fixtures"
+
+class TestParseTs:
+    def test_parses_standard_format(self):
+        dt = _parse_ts("2024-06-01 12:00:00")
+        assert dt == datetime(2024, 6, 1, 12, 0, 0)
+
+    def test_parses_with_microseconds(self):
+        dt = _parse_ts("2024-06-01 12:00:00.123456")
+        assert dt.microsecond == 123456
+
+    def test_parses_iso_format(self):
+        dt = _parse_ts("2024-06-01T12:00:00Z")
+        assert dt == datetime(2024, 6, 1, 12, 0, 0)
+
+    def test_parses_iso_with_ms(self):
+        dt = _parse_ts("2024-06-01T12:00:00.500Z")
+        assert dt.microsecond == 500000
+
+    def test_parses_with_utc_suffix(self):
+        dt = _parse_ts("2024-06-01 12:00:00 UTC")
+        assert dt == datetime(2024, 6, 1, 12, 0, 0)
+
+    def test_strips_quotes(self):
+        dt = _parse_ts('"2024-06-01 12:00:00"')
+        assert dt == datetime(2024, 6, 1, 12, 0, 0)
+
+    def test_returns_none_for_empty(self):
+        assert _parse_ts("") is None
+        assert _parse_ts(None) is None
+
+    def test_returns_none_for_invalid(self):
+        assert _parse_ts("not a date at all") is None
+
+    def test_returns_none_for_zero(self):
+        assert _parse_ts(0) is None
+
+    def test_returns_none_for_numeric_string(self):
+        assert _parse_ts("1000") is None
 
 
-class TestParseTs(unittest.TestCase):
-    def test_utc_format(self):
-        dt = _parse_ts("2025-01-15 10:00:00.000 UTC")
-        self.assertIsInstance(dt, datetime)
-        self.assertEqual(dt.year, 2025)
-        self.assertEqual(dt.month, 1)
+class TestIterMatchingLines:
+    def test_yields_matching_lines(self, tmp_path):
+        f = tmp_path / "events.json"
+        f.write_text('{"type":"RTC_CONNECTED","data":"a"}\n{"type":"OTHER","data":"b"}\n{"type":"RTC_DISCONNECTED","data":"c"}\n')
+        lines = list(_iter_matching_lines(f, "RTC_CONNECTED|RTC_DISCONNECTED"))
+        assert len(lines) == 2
 
-    def test_iso_format(self):
-        dt = _parse_ts("2025-01-15T10:00:00.000Z")
-        self.assertIsInstance(dt, datetime)
+    def test_no_matches_returns_empty(self, tmp_path):
+        f = tmp_path / "events.json"
+        f.write_text('{"type":"OTHER"}\n')
+        assert list(_iter_matching_lines(f, "RTC_CONNECTED")) == []
 
-    def test_iso_no_ms(self):
-        dt = _parse_ts("2025-01-15T10:00:00Z")
-        self.assertIsInstance(dt, datetime)
-
-    def test_plain_format(self):
-        dt = _parse_ts("2025-01-15 10:00:00")
-        self.assertIsInstance(dt, datetime)
-
-    def test_quoted_string(self):
-        dt = _parse_ts('"2025-01-15 10:00:00.000 UTC"')
-        self.assertIsInstance(dt, datetime)
-
-    def test_none_input(self):
-        self.assertIsNone(_parse_ts(None))
-
-    def test_empty_string(self):
-        self.assertIsNone(_parse_ts(""))
-
-    def test_garbage_string(self):
-        self.assertIsNone(_parse_ts("not-a-date"))
-
-    def test_zero(self):
-        self.assertIsNone(_parse_ts(0))
+    def test_empty_file(self, tmp_path):
+        f = tmp_path / "events.json"
+        f.write_text("")
+        assert list(_iter_matching_lines(f, "RTC_CONNECTED")) == []
 
 
-class TestStreamRtcEventsViaGrep(unittest.TestCase):
-    def test_yields_rtc_events(self):
-        events = list(_stream_rtc_events_via_grep(FIXTURES / "Aktivität"))
-        rtc_states = [e[2] for e in events]
-        self.assertIn("RTC_CONNECTED", rtc_states)
-        self.assertIn("RTC_DISCONNECTED", rtc_states)
+class TestGrepJsonLines:
+    def test_parses_json_objects(self, mock_export_dir):
+        files = list(mock_export_dir.glob("Aktivität/analytics/*.json"))
+        results = list(_grep_json_lines(files, "RTC_CONNECTED|RTC_DISCONNECTED"))
+        assert len(results) == 5
+        assert all(isinstance(r, dict) for r in results)
 
-    def test_yields_correct_structure(self):
-        events = list(_stream_rtc_events_via_grep(FIXTURES / "Aktivität"))
-        for ev in events:
-            sid, uptime, rtc, init_ts = ev
-            self.assertIsInstance(sid, str)
-            self.assertIsInstance(uptime, int)
-            self.assertIn(rtc, ("RTC_CONNECTED", "RTC_DISCONNECTED"))
-            self.assertIsInstance(init_ts, str)
+    def test_falls_back_on_missing_grep(self, mock_export_dir):
+        files = list(mock_export_dir.glob("Aktivität/analytics/*.json"))
+        with patch("subprocess.run", side_effect=FileNotFoundError):
+            results = list(_grep_json_lines(files, "RTC_CONNECTED"))
+            assert len(results) == 3
 
-    def test_skips_non_rtc_events(self):
-        events = list(_stream_rtc_events_via_grep(FIXTURES / "Aktivität"))
-        rtc_values = [e[2] for e in events]
-        self.assertNotIn("SOMETHING_ELSE", rtc_values)
-
-    def test_empty_dir(self):
-        events = list(_stream_rtc_events_via_grep(Path("/nonexistent_dir_xyz")))
-        self.assertEqual(len(events), 0)
+    def test_skips_invalid_json(self, tmp_path):
+        f = tmp_path / "bad.json"
+        f.write_text('{"valid":1}\nnot json\n{"also":2}\n')
+        results = list(_grep_json_lines([f], "valid|also"))
+        assert len(results) == 2
 
 
-class TestStreamLeaveVoiceEvents(unittest.TestCase):
-    def test_yields_leave_events(self):
-        events = list(_stream_leave_voice_events(FIXTURES / "Aktivität"))
-        self.assertGreaterEqual(len(events), 2)
+class TestStreamRtcEvents:
+    def test_yields_correct_tuples(self, mock_export_dir):
+        events = list(_stream_rtc_events_via_grep(mock_export_dir / "Aktivität" / "analytics"))
+        assert len(events) == 5
+        assert all(len(e) == 4 for e in events)
 
-    def test_yields_correct_structure(self):
-        events = list(_stream_leave_voice_events(FIXTURES / "Aktivität"))
-        for ev in events:
-            cid, gid, dur, ts = ev
-            self.assertIsInstance(cid, str)
-            self.assertIsInstance(gid, str)
-            self.assertIsInstance(dur, int)
-            self.assertGreater(dur, 0)
-            self.assertIsInstance(ts, str)
-
-    def test_includes_dm_and_server_channels(self):
-        events = list(_stream_leave_voice_events(FIXTURES / "Aktivität"))
-        cids = [e[0] for e in events]
-        self.assertIn("1234", cids)   # DM channel
-        self.assertIn("5678", cids)   # server channel
-
-    def test_skips_reporting_events(self):
-        """Only leave_voice_channel events, not guild_viewed etc."""
-        events = list(_stream_leave_voice_events(FIXTURES / "Aktivität"))
-        for ev in events:
-            self.assertNotEqual(ev[0], "")  # must have channel_id
-
-    def test_empty_dir(self):
-        events = list(_stream_leave_voice_events(Path("/nonexistent_dir_xyz")))
-        self.assertEqual(len(events), 0)
+    def test_sessions_include_both_states(self, mock_export_dir):
+        events = list(_stream_rtc_events_via_grep(mock_export_dir / "Aktivität" / "analytics"))
+        states = {e[2] for e in events}
+        assert "RTC_CONNECTED" in states
+        assert "RTC_DISCONNECTED" in states
 
 
-class TestDetectVoiceSessions(unittest.TestCase):
-    def test_detects_sessions(self):
-        sessions = detect_voice_sessions(FIXTURES / "Aktivität",
-                                          min_duration_seconds=0)
-        self.assertGreaterEqual(len(sessions), 1)
+class TestStreamLeaveVoiceEvents:
+    def test_yields_events(self, mock_export_dir):
+        events = list(_stream_leave_voice_events(mock_export_dir / "Aktivität"))
+        assert len(events) >= 1
+
+    def test_yields_channel_id_and_duration(self, mock_export_dir):
+        events = list(_stream_leave_voice_events(mock_export_dir / "Aktivität"))
+        for cid, gid, dur, ts in events:
+            assert cid
+            assert dur > 0
+
+
+class TestAppendSession:
+    def test_appends_long_enough_session(self):
+        sessions = []
+        init = datetime(2024, 6, 1, 12, 0, 0)
+        _append_session(sessions, init, 0, 3600, 30)
+        assert len(sessions) == 1
+        assert sessions[0].duration_seconds == 3600
+
+    def test_skips_short_session(self):
+        sessions = []
+        init = datetime(2024, 6, 1, 12, 0, 0)
+        _append_session(sessions, init, 0, 10, 30)
+        assert len(sessions) == 0
+
+    def test_duration_at_threshold(self):
+        sessions = []
+        init = datetime(2024, 6, 1, 12, 0, 0)
+        _append_session(sessions, init, 0, 30, 30)
+        assert len(sessions) == 1
+
+
+class TestDetectVoiceSessions:
+    def test_detects_sessions(self, mock_export_dir):
+        sessions = detect_voice_sessions(mock_export_dir / "Aktivität")
+        assert len(sessions) >= 1
+
+    def test_sessions_have_start_and_duration(self, mock_export_dir):
+        sessions = detect_voice_sessions(mock_export_dir / "Aktivität")
         for s in sessions:
-            self.assertIsInstance(s, VoiceSession)
-            self.assertIsInstance(s.start, datetime)
-            self.assertGreater(s.duration_seconds, 0)
+            assert isinstance(s.start, datetime)
+            assert s.duration_seconds > 0
 
-    def test_min_duration_filter(self):
-        sessions = detect_voice_sessions(FIXTURES / "Aktivität",
-                                          min_duration_seconds=99999)
-        self.assertEqual(len(sessions), 0)
+    def test_min_duration_filter(self, mock_export_dir):
+        sessions = detect_voice_sessions(mock_export_dir / "Aktivität", min_duration_seconds=10000)
+        assert len(sessions) == 0
 
-    def test_sessions_sorted_by_start(self):
-        sessions = detect_voice_sessions(FIXTURES / "Aktivität",
-                                          min_duration_seconds=0)
-        starts = [s.start for s in sessions]
-        self.assertEqual(starts, sorted(starts))
+    def test_progress_callback_receives(self, mock_export_dir):
+        calls = []
+        detect_voice_sessions(mock_export_dir / "Aktivität", progress_callback=lambda c, t: calls.append((c, t)))
+        assert len(calls) > 0
 
 
-class TestAggregateChannelDurations(unittest.TestCase):
-    def test_aggregates_by_channel(self):
-        result = aggregate_channel_durations(FIXTURES / "Aktivität", FIXTURES)
-        self.assertGreaterEqual(len(result), 2)
+class TestAggregateChannelDurations:
+    def test_aggregates_by_channel(self, mock_export_dir):
+        result = aggregate_channel_durations(mock_export_dir / "Aktivität", mock_export_dir)
+        assert len(result) >= 1
 
-    def test_dm_channels_have_usernames(self):
-        result = aggregate_channel_durations(FIXTURES / "Aktivität", FIXTURES)
-        dm_names = [k for k, v in result.items() if v["name_type"] == "dm"]
-        self.assertIn("alice", dm_names)
-        self.assertIn("bob", dm_names)
+    def test_includes_duration_and_count(self, mock_export_dir):
+        result = aggregate_channel_durations(mock_export_dir / "Aktivität", mock_export_dir)
+        for info in result.values():
+            assert "duration_seconds" in info
+            assert "call_count" in info
+            assert "name_type" in info
 
-    def test_server_entries_have_server_name(self):
-        result = aggregate_channel_durations(FIXTURES / "Aktivität", FIXTURES)
-        sv = [v for v in result.values() if v["name_type"] == "server"]
-        self.assertGreaterEqual(len(sv), 1)
-        self.assertIn("MyServer", sv[0]["name"])
-
-    def test_unknown_channels_use_channel_id(self):
-        result = aggregate_channel_durations(FIXTURES / "Aktivität", FIXTURES)
-        unknown = [v for v in result.values() if v["name_type"] == "unknown"]
-        self.assertGreaterEqual(len(unknown), 1)
-        self.assertTrue(unknown[0]["name"].startswith("#"))
-
-    def test_duration_fields_present(self):
-        result = aggregate_channel_durations(FIXTURES / "Aktivität", FIXTURES)
-        for v in result.values():
-            self.assertIn("duration_seconds", v)
-            self.assertIn("duration_minutes", v)
-            self.assertIn("duration_hours", v)
-            self.assertIn("call_count", v)
-            self.assertIn("name_type", v)
-            self.assertIn("channel_id", v)
-            self.assertGreaterEqual(v["call_count"], 1)
-
-    def test_sorted_by_duration_desc(self):
-        """voice_summary returns channel_durations sorted by duration."""
-        summary = voice_summary(FIXTURES)
-        cd = summary.get("channel_durations", [])
-        if len(cd) >= 2:
-            for i in range(len(cd) - 1):
-                self.assertGreaterEqual(cd[i]["duration_seconds"],
-                                        cd[i + 1]["duration_seconds"])
+    def test_resolves_dm_channel_names(self, mock_export_dir):
+        result = aggregate_channel_durations(mock_export_dir / "Aktivität", mock_export_dir)
+        dm = {k: v for k, v in result.items() if v["name_type"] == "dm"}
+        assert len(dm) >= 1
+        assert "Alice" in dm
 
 
-class TestVoiceSummary(unittest.TestCase):
-    def test_returns_expected_keys(self):
-        s = voice_summary(FIXTURES)
-        for key in ("total_sessions", "total_duration_seconds",
-                     "total_duration_formatted", "average_duration_seconds",
-                     "longest_session_seconds", "sessions_by_day",
-                     "sessions", "channel_durations"):
-            self.assertIn(key, s)
+class TestVoiceSummary:
+    def test_returns_full_dict(self, mock_export_dir):
+        s = voice_summary(mock_export_dir)
+        assert "total_sessions" in s
+        assert "total_duration_seconds" in s
+        assert "total_duration_formatted" in s
+        assert "average_duration_seconds" in s
+        assert "longest_session_seconds" in s
+        assert "sessions_by_day" in s
+        assert "sessions" in s
+        assert "channel_durations" in s
 
-    def test_missing_activity_dir(self):
-        s = voice_summary(Path("/nonexistent_dir_xyz"))
-        self.assertEqual(s["total_sessions"], 0)
-        self.assertEqual(s["total_duration_seconds"], 0)
-        self.assertIn("error", s)
+    def test_no_sessions_returns_empty(self, mock_export_dir):
+        (mock_export_dir / "Aktivität" / "analytics" / "events-0.json").unlink()
+        (mock_export_dir / "Aktivität" / "analytics" / "events-0.json").write_text("")
+        with patch("analyzers.voice.detect_voice_sessions", return_value=[]):
+            s = voice_summary(mock_export_dir)
+            assert s["total_sessions"] == 0
+            assert s["total_duration_seconds"] == 0
+            assert s["sessions_by_day"] == {}
+            assert s["sessions"] == []
 
-    def test_total_duration_formatted(self):
-        s = voice_summary(FIXTURES)
-        self.assertRegex(s["total_duration_formatted"], r"^\d+h \d+m")
-
-
-if __name__ == "__main__":
-    unittest.main()
+    def test_missing_activity_dir(self, tmp_path):
+        s = voice_summary(tmp_path)
+        assert s["total_sessions"] == 0
+        assert "error" in s

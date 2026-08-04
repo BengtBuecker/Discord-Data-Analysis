@@ -1,11 +1,9 @@
-"""Tests for utils/parser.py — data access layer."""
+"""Tests for utils/parser.py — all 8 parser functions."""
 
 import json
-import unittest
 from pathlib import Path
 
-import sys
-sys.path.insert(0, str(Path(__file__).parent.parent))
+import pytest
 
 from utils.parser import (
     load_json,
@@ -18,96 +16,145 @@ from utils.parser import (
     extract_dm_username,
 )
 
-FIXTURES = Path(__file__).parent / "fixtures"
+
+class TestLoadJson:
+    def test_loads_valid_json(self, tmp_path):
+        p = tmp_path / "test.json"
+        p.write_text('{"a": 1, "b": [2]}')
+        assert load_json(p) == {"a": 1, "b": [2]}
+
+    def test_loads_empty_object(self, tmp_path):
+        p = tmp_path / "empty.json"
+        p.write_text("{}")
+        assert load_json(p) == {}
+
+    def test_loads_array(self, tmp_path):
+        p = tmp_path / "arr.json"
+        p.write_text('[1, 2, 3]')
+        assert load_json(p) == [1, 2, 3]
+
+    def test_raises_on_missing_file(self, tmp_path):
+        with pytest.raises(FileNotFoundError):
+            load_json(tmp_path / "nope.json")
+
+    def test_raises_on_invalid_json(self, tmp_path):
+        p = tmp_path / "bad.json"
+        p.write_text("{invalid")
+        with pytest.raises(json.JSONDecodeError):
+            load_json(p)
+
+    def test_loads_unicode(self, tmp_path):
+        p = tmp_path / "uni.json"
+        p.write_text('{"name": "Müller", "emoji": "🎄"}')
+        assert load_json(p)["name"] == "Müller"
 
 
-class TestLoadJson(unittest.TestCase):
-    def test_loads_valid_json(self):
-        result = load_json(FIXTURES / "Account" / "user.json")
-        self.assertEqual(result["id"], "123456789")
-        self.assertEqual(result["username"], "testuser")
+class TestLoadIndex:
+    def test_loads_mapping(self, mock_export_dir):
+        result = load_index(mock_export_dir)
+        assert "12345" in result
+        assert result["12345"] == "Direct Message with Alice#1234"
+        assert result["99999"] == "general in MyServer"
 
-    def test_raises_on_missing_file(self):
-        with self.assertRaises(FileNotFoundError):
-            load_json(FIXTURES / "nonexistent.json")
-
-    def test_raises_on_invalid_json(self):
-        bad = FIXTURES / "_bad.json"
-        bad.write_text("not json")
-        with self.assertRaises(json.JSONDecodeError):
-            load_json(bad)
-        bad.unlink()
+    def test_missing_file_raises(self, tmp_path):
+        with pytest.raises(FileNotFoundError):
+            load_index(tmp_path)
 
 
-class TestLoadHelpers(unittest.TestCase):
-    def test_load_index(self):
-        idx = load_index(FIXTURES)
-        self.assertEqual(idx["1234"], "Direct Message with alice#0")
-        self.assertEqual(idx["5678"], "general-chat in MyServer")
+class TestLoadChannelInfo:
+    def test_loads_channel_json(self, mock_export_dir):
+        info = load_channel_info(mock_export_dir / "Nachrichten" / "c12345")
+        assert info["id"] == "12345"
+        assert info["type"] == 0
 
-    def test_load_channel_info(self):
-        info = load_channel_info(FIXTURES / "Nachrichten" / "c1234")
-        self.assertEqual(info["id"], "1234")
-
-    def test_load_messages(self):
-        msgs = load_messages(FIXTURES / "Nachrichten" / "c1234")
-        self.assertEqual(len(msgs), 3)
-
-    def test_load_index_missing(self):
-        with self.assertRaises(FileNotFoundError):
-            load_index(Path("/nonexistent"))
+    def test_missing_channel_json(self, mock_export_dir):
+        with pytest.raises(FileNotFoundError):
+            load_channel_info(mock_export_dir / "Nachrichten" / "nonexistent")
 
 
-class TestIterMessageChannels(unittest.TestCase):
-    def test_yields_channel_dirs(self):
-        dirs = list(iter_message_channels(FIXTURES / "Nachrichten"))
-        names = sorted(d.name for d in dirs)
-        self.assertEqual(names, ["c1234", "c5678"])
+class TestLoadMessages:
+    def test_loads_message_array(self, mock_export_dir):
+        msgs = load_messages(mock_export_dir / "Nachrichten" / "c12345")
+        assert len(msgs) == 5
+        assert msgs[0]["Contents"] == "Hello Alice"
 
-    def test_skips_missing_messages(self):
-        empty = FIXTURES / "_empty_ch"
-        empty.mkdir(exist_ok=True)
-        dirs = list(iter_message_channels(empty))
-        self.assertEqual(len(dirs), 0)
-        empty.rmdir()
+    def test_empty_channel(self, mock_export_dir):
+        msgs = load_messages(mock_export_dir / "Nachrichten" / "c99999")
+        assert msgs == []
 
 
-class TestDirnameToChannelId(unittest.TestCase):
+class TestIterMessageChannels:
+    def test_iterates_valid_channels(self, mock_export_dir):
+        channels = list(iter_message_channels(mock_export_dir / "Nachrichten"))
+        names = {c.name for c in channels}
+        assert "c12345" in names
+        assert "c99999" in names
+
+    def test_skips_dirs_without_messages_json(self, tmp_path):
+        d = tmp_path / "chans"
+        d.mkdir()
+        (d / "c1").mkdir()
+        (d / "c1" / "messages.json").write_text("[]")
+        (d / "c2").mkdir()
+        channels = list(iter_message_channels(d))
+        assert len(channels) == 1
+        assert channels[0].name == "c1"
+
+    def test_empty_dir(self, tmp_path):
+        d = tmp_path / "empty"
+        d.mkdir()
+        assert list(iter_message_channels(d)) == []
+
+
+class TestDirnameToChannelId:
     def test_strips_c_prefix(self):
-        self.assertEqual(dirname_to_channel_id("c1234"), "1234")
+        assert dirname_to_channel_id("c12345") == "12345"
+        assert dirname_to_channel_id("c999") == "999"
 
-    def test_no_c_prefix_passthrough(self):
-        self.assertEqual(dirname_to_channel_id("1234"), "1234")
+    def test_no_prefix_passthrough(self):
+        assert dirname_to_channel_id("12345") == "12345"
+        assert dirname_to_channel_id("abc") == "abc"
 
+    def test_empty_string(self):
+        assert dirname_to_channel_id("") == ""
 
-class TestIterAnalyticsFiles(unittest.TestCase):
-    def test_finds_all_json(self):
-        files = iter_analytics_files(FIXTURES / "Aktivität")
-        names = sorted(f.name for f in files)
-        self.assertIn("events-00001.json", names)
-        self.assertGreaterEqual(len(files), 3)
-
-    def test_empty_dir(self):
-        files = iter_analytics_files(Path("/nonexistent_dir_xyz"))
-        self.assertEqual(len(files), 0)
+    def test_single_c(self):
+        assert dirname_to_channel_id("c") == ""
 
 
-class TestExtractDmUsername(unittest.TestCase):
-    def test_extracts_direct_message(self):
-        self.assertEqual(
-            extract_dm_username("Direct Message with alice#0"), "alice")
+class TestIterAnalyticsFiles:
+    def test_finds_json_files(self, mock_export_dir):
+        files = iter_analytics_files(mock_export_dir / "Aktivität")
+        assert len(files) >= 1
 
-    def test_extracts_without_discriminator(self):
-        self.assertEqual(
-            extract_dm_username("Direct Message with bob"), "bob")
+    def test_missing_dir_returns_empty(self, tmp_path):
+        assert iter_analytics_files(tmp_path / "nope") == []
 
-    def test_returns_none_for_server(self):
-        self.assertIsNone(
-            extract_dm_username("general-chat in MyServer"))
-
-    def test_returns_none_for_plain(self):
-        self.assertIsNone(extract_dm_username("general-chat"))
+    def test_skips_non_json(self, tmp_path):
+        d = tmp_path / "data"
+        d.mkdir()
+        (d / "events.txt").write_text("hello")
+        assert iter_analytics_files(d) == []
 
 
-if __name__ == "__main__":
-    unittest.main()
+class TestExtractDmUsername:
+    def test_extracts_username(self):
+        assert extract_dm_username("Direct Message with Alice#1234") == "Alice"
+        assert extract_dm_username("Direct Message with Bob") == "Bob"
+
+    def test_extracts_username_with_spaces(self):
+        assert extract_dm_username("Direct Message with John Doe#5678") == "John Doe"
+
+    def test_returns_none_for_server_channel(self):
+        assert extract_dm_username("general in MyServer") is None
+
+    def test_returns_none_for_unknown(self):
+        assert extract_dm_username("Unknown channel") is None
+        assert extract_dm_username("") is None
+        assert extract_dm_username("random text") is None
+
+    def test_handles_no_discriminator(self):
+        assert extract_dm_username("Direct Message with userName") == "userName"
+
+    def test_handles_zero_discriminator(self):
+        assert extract_dm_username("Direct Message with user#0") == "user"
