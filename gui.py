@@ -208,7 +208,10 @@ class DashboardApp:
             if last_line and "\r" in last_line:
                 last_line = last_line.rsplit("\r", 1)[-1].strip()
             if last_line:
-                self.status.configure(text=last_line)
+                try:
+                    self.status.configure(text=last_line)
+                except tk.TclError:
+                    return  # widget destroyed
         if not hasattr(self, '_data') or self._data is None:
             self.root.after(200, self._poll_stderr)
 
@@ -406,7 +409,7 @@ class DashboardApp:
 
             bar_w = int(count / max_count * 320)
             bar = tk.Canvas(row, bg=C["base"], height=16, width=320,
-                             highlightthreshold=0, bd=0)
+                             highlightthickness=0, bd=0)
             bar.pack(side=tk.LEFT)
             color = BAR_COLORS[i % len(BAR_COLORS)]
             if bar_w > 0:
