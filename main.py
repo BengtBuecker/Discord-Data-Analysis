@@ -2,13 +2,16 @@
 """Discord Data Analyzer -- PyWebView Entry Point
 
 Renders the dashboard via native OS webview (Edge WebView2 on Windows).
-Zero-dependency fallback: if pywebview not installed, prints install hint.
+Supports both dev (python main.py) and PyInstaller-frozen (.exe) modes.
 """
 
 import sys
 from pathlib import Path
 
-UI_DIR = Path(__file__).parent / "ui"
+if getattr(sys, "frozen", False):
+    UI_DIR = Path(sys._MEIPASS) / "ui"
+else:
+    UI_DIR = Path(__file__).parent / "ui"
 
 try:
     import webview
