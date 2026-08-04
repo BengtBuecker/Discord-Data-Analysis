@@ -1,17 +1,12 @@
 #!/usr/bin/env python3
-"""Discord Data Analyzer — Desktop GUI
+"""Discord Data Analyzer -- Desktop GUI (Dashboard Edition)
 
-Zero-dependency desktop app. Select or drop your Discord GDPR ZIP,
-get the full analysis report. Works offline.
-
-Start:  python gui.py
-Build:  pip install pyinstaller && pyinstaller --onefile --windowed gui.py
+Zero-dependency modern dashboard. Select your Discord GDPR ZIP,
+get a visual breakdown of messages, voice calls, and servers.
 """
 
-import io
 import os
 import shutil
-import subprocess
 import sys
 import tempfile
 import threading
@@ -21,187 +16,127 @@ from pathlib import Path
 from tkinter import filedialog, ttk
 
 ANALYZER_DIR = Path(__file__).parent.resolve()
+sys.path.insert(0, str(ANALYZER_DIR))
 
-# ── Colors (Catppuccin Mocha) ──────────────────────────────────────────
+from analyzers.messages import (
+    count_messages_by_dm_user,
+    count_messages_by_server,
+    count_messages_by_channel,
+    message_timeline,
+    message_summary,
+)
+from analyzers.voice import voice_summary
+
+# -- Colors (Catppuccin Mocha) -------------------------------------------
 C = {
     "bg":       "#1e1e2e",
     "surface":  "#313244",
-    "overlay":  "#45475a",
+    "surface0": "#45475a",
+    "overlay":  "#585b70",
     "text":     "#cdd6f4",
-    "subtext":  "#6c7086",
+    "subtext":  "#a6adc8",
+    "dim":      "#6c7086",
     "blue":     "#89b4fa",
     "green":    "#a6e3a1",
     "red":      "#f38ba8",
     "yellow":   "#f9e2af",
+    "mauve":    "#cba6f7",
+    "peach":    "#fab387",
+    "teal":     "#94e2d5",
     "base":     "#11111b",
+    "crust":    "#11111b",
 }
+BAR_COLORS = [C["blue"], C["green"], C["mauve"], C["peach"], C["teal"],
+              C["yellow"], C["red"], C["overlay"], C["blue"], C["green"]]
 
-# ── Drag-and-drop support (optional) ───────────────────────────────────
-DND_AVAILABLE = False
+# -- Optional drag-and-drop ----------------------------------------------
+DND = False
 try:
     from tkinterdnd2 import DND_FILES, TkinterDnD
-    DND_AVAILABLE = True
+    DND = True
 except ImportError:
     pass
 
 
-class AnalyzerApp:
+class DashboardApp:
     def __init__(self):
-        if DND_AVAILABLE:
-            self.root = TkinterDnD.Tk()
-        else:
-            self.root = tk.Tk()
-
+        self.root = (TkinterDnD.Tk() if DND else tk.Tk())
         self.root.title("Discord Data Analyzer")
-        self.root.geometry("900x700")
-        self.root.minsize(600, 500)
+        self.root.geometry("960x780")
+        self.root.minsize(800, 600)
         self.root.configure(bg=C["bg"])
+        self._data = None
+        self._build_landing()
+        self._center()
 
-        self._build_ui()
-        self._center_window()
-
-    def _center_window(self):
+    def _center(self):
         self.root.update_idletasks()
         w, h = self.root.winfo_width(), self.root.winfo_height()
-        sw, sh = self.root.winfo_screenwidth(), self.root.winfo_screenheight()
-        x, y = (sw - w) // 2, (sh - h) // 2
-        self.root.geometry(f"{w}x{h}+{x}+{y}")
+        sw = self.root.winfo_screenwidth()
+        sh = self.root.winfo_screenheight()
+        self.root.geometry(f"{w}x{h}+{(sw-w)//2}+{(sh-h)//2}")
 
-    def _build_ui(self):
-        # ── Top bar
-        top = tk.Frame(self.root, bg=C["bg"])
-        top.pack(fill=tk.X, padx=24, pady=(24, 0))
+    # -- Landing --------------------------------------------------------
 
-        tk.Label(
-            top, text="Discord Data Analyzer", font=("Segoe UI", 18, "bold"),
-            fg=C["text"], bg=C["bg"],
-        ).pack(anchor="w")
+    def _build_landing(self):
+        for w in self.root.winfo_children():
+            w.destroy()
 
-        tk.Label(
-            top, text="Drop your Discord GDPR ZIP or select it below. 100% offline.",
-            font=("Segoe UI", 10), fg=C["subtext"], bg=C["bg"],
-        ).pack(anchor="w", pady=(4, 0))
+        self.landing = tk.Frame(self.root, bg=C["bg"])
+        self.landing.pack(fill=tk.BOTH, expand=True)
 
-        # ── Drop zone
-        self.drop_frame = tk.Frame(
-            self.root, bg=C["surface"], highlightthickness=2,
-            highlightbackground=C["overlay"], relief=tk.FLAT,
-        )
-        self.drop_frame.pack(fill=tk.BOTH, expand=False, padx=24, pady=16)
+        spacer = tk.Frame(self.landing, bg=C["bg"], height=120)
+        spacer.pack()
 
-        self.drop_label = tk.Label(
-            self.drop_frame,
-            text="Drop your Discord ZIP here\nor click to select",
-            font=("Segoe UI", 13), fg=C["subtext"], bg=C["surface"],
-            justify=tk.CENTER, pady=40,
-        )
-        self.drop_label.pack(fill=tk.BOTH, expand=True)
+        tk.Label(self.landing, text="Discord Data Analyzer",
+                 font=("Segoe UI", 28, "bold"), fg=C["text"], bg=C["bg"]).pack()
+        tk.Label(self.landing, text="Drop your Discord GDPR ZIP to get started",
+                 font=("Segoe UI", 12), fg=C["subtext"], bg=C["bg"]).pack(pady=(4, 32))
+
+        self.drop_frame = tk.Frame(self.landing, bg=C["surface"],
+                                    highlightthickness=2,
+                                    highlightbackground=C["surface0"])
+        self.drop_frame.pack(ipadx=100, ipady=50)
+
+        self.drop_label = tk.Label(self.drop_frame,
+                                    text="Drop ZIP here\nor click to select",
+                                    font=("Segoe UI", 14), fg=C["dim"],
+                                    bg=C["surface"], justify=tk.CENTER, cursor="hand2")
+        self.drop_label.pack(padx=60, pady=40)
+
+        self.drop_label.bind("<Button-1>", lambda e: self._select_file())
+        self.drop_frame.bind("<Button-1>", lambda e: self._select_file())
+
+        self.select_btn = tk.Button(self.landing, text="Select ZIP File",
+                                     font=("Segoe UI", 12, "bold"),
+                                     bg=C["blue"], fg=C["base"],
+                                     activebackground=C["green"],
+                                     activeforeground=C["base"],
+                                     relief=tk.FLAT, bd=0, padx=32, pady=10,
+                                     cursor="hand2", command=self._select_file)
+        self.select_btn.pack(pady=20)
+
+        self.progress = ttk.Progressbar(self.landing, mode="indeterminate", length=300)
+        self.status = tk.Label(self.landing, text="",
+                               font=("Segoe UI", 10), fg=C["dim"], bg=C["bg"])
 
         self._bind_drop()
 
-        # File picker button
-        self.btn_frame = tk.Frame(self.root, bg=C["bg"])
-        self.btn_frame.pack(fill=tk.X, padx=24)
-
-        self.select_btn = tk.Button(
-            self.btn_frame, text="Select ZIP File", font=("Segoe UI", 11, "bold"),
-            bg=C["blue"], fg=C["base"], activebackground=C["green"],
-            activeforeground=C["base"], relief=tk.FLAT, bd=0,
-            padx=24, pady=8, cursor="hand2",
-            command=self._select_file,
-        )
-        self.select_btn.pack(side=tk.LEFT)
-
-        self.status_label = tk.Label(
-            self.btn_frame, text="", font=("Segoe UI", 10),
-            fg=C["subtext"], bg=C["bg"],
-        )
-        self.status_label.pack(side=tk.LEFT, padx=16)
-
-        # ── Progress bar
-        self.progress = ttk.Progressbar(
-            self.root, mode="indeterminate", length=300,
-        )
-        self.progress.pack(fill=tk.X, padx=24, pady=(12, 0))
-        self.progress.pack_forget()
-
-        # ── Results area
-        self.result_frame = tk.Frame(self.root, bg=C["bg"])
-        self.result_frame.pack(fill=tk.BOTH, expand=True, padx=24, pady=(12, 8))
-
-        self.result_text = tk.Text(
-            self.result_frame, wrap=tk.WORD, font=("Consolas", 10),
-            bg=C["base"], fg=C["text"], insertbackground=C["text"],
-            relief=tk.FLAT, bd=0, padx=16, pady=12,
-            state=tk.DISABLED,
-        )
-        self.result_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-
-        scrollbar = tk.Scrollbar(
-            self.result_frame, command=self.result_text.yview,
-            bg=C["surface"], troughcolor=C["bg"], activebackground=C["overlay"],
-        )
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        self.result_text.configure(yscrollcommand=scrollbar.set)
-
-        self._setup_text_tags()
-
-        # ── Bottom buttons
-        self.bottom_frame = tk.Frame(self.root, bg=C["bg"])
-        self.bottom_frame.pack(fill=tk.X, padx=24, pady=(0, 16))
-
-        self.save_btn = tk.Button(
-            self.bottom_frame, text="Save Results", font=("Segoe UI", 10),
-            bg=C["surface"], fg=C["text"], activebackground=C["overlay"],
-            activeforeground=C["text"], relief=tk.FLAT, bd=0,
-            padx=16, pady=6, cursor="hand2",
-            command=self._save_results,
-            state=tk.DISABLED,
-        )
-        self.save_btn.pack(side=tk.LEFT)
-
-        self.new_btn = tk.Button(
-            self.bottom_frame, text="New Analysis", font=("Segoe UI", 10),
-            bg=C["surface"], fg=C["text"], activebackground=C["overlay"],
-            activeforeground=C["text"], relief=tk.FLAT, bd=0,
-            padx=16, pady=6, cursor="hand2",
-            command=self._reset,
-            state=tk.DISABLED,
-        )
-        self.new_btn.pack(side=tk.LEFT, padx=8)
-
-        # ── Status bar
-        self.status_bar = tk.Label(
-            self.root, text="Ready", font=("Segoe UI", 9),
-            fg=C["subtext"], bg=C["bg"], anchor=tk.W,
-        )
-        self.status_bar.pack(fill=tk.X, padx=24, pady=(0, 8))
-
-    def _setup_text_tags(self):
-        self.result_text.tag_configure("h1", font=("Consolas", 12, "bold"), foreground=C["blue"])
-        self.result_text.tag_configure("h2", font=("Consolas", 10, "bold"), foreground=C["green"])
-        self.result_text.tag_configure("dim", foreground=C["overlay"])
-        self.result_text.tag_configure("err", foreground=C["red"])
-
     def _bind_drop(self):
-        # Click on drop zone → file dialog
-        self.drop_label.bind("<Button-1>", lambda e: self._select_file())
-        self.drop_frame.bind("<Button-1>", lambda e: self._select_file())
-        self.drop_label.configure(cursor="hand2")
+        if not DND:
+            return
+        self.drop_label.drop_target_register(DND_FILES)
+        self.drop_frame.drop_target_register(DND_FILES)
 
-        if DND_AVAILABLE:
-            self.drop_label.drop_target_register(DND_FILES)
-            self.drop_frame.drop_target_register(DND_FILES)
+        def on_drop(event):
+            path = event.data.strip("{}")
+            if os.path.isfile(path):
+                self._process_file(path)
 
-            def on_drop(event):
-                path = event.data.strip("{}")
-                if os.path.isfile(path):
-                    self._process_file(path)
+        self.drop_label.dnd_bind("<<Drop>>", on_drop)
+        self.drop_frame.dnd_bind("<<Drop>>", on_drop)
 
-            self.drop_label.dnd_bind("<<Drop>>", on_drop)
-            self.drop_frame.dnd_bind("<<Drop>>", on_drop)
-
-    # ── Actions ────────────────────────────────────────────────────────
+    # -- File handling --------------------------------------------------
 
     def _select_file(self):
         path = filedialog.askopenfilename(
@@ -213,20 +148,15 @@ class AnalyzerApp:
 
     def _process_file(self, path: str):
         path = Path(path)
-        if not path.suffix.lower() == ".zip":
-            self._set_status("Please select a .zip file.", C["red"])
-            return
-        if not path.exists():
-            self._set_status("File not found.", C["red"])
+        if not path.suffix.lower() == ".zip" or not path.exists():
             return
 
-        self._set_status(f"Processing {path.name}...", C["yellow"])
-        self.progress.pack(fill=tk.X, padx=24, pady=(12, 0))
-        self.progress.start()
         self.select_btn.configure(state=tk.DISABLED)
-        self.new_btn.configure(state=tk.DISABLED)
-        self.save_btn.configure(state=tk.DISABLED)
         self.drop_label.configure(text=f"Analyzing {path.name}...", fg=C["yellow"])
+        self.progress.pack(pady=(12, 0))
+        self.progress.start()
+        self.status.pack()
+        self.status.configure(text="Extracting ZIP...", fg=C["dim"])
 
         threading.Thread(target=self._run_analysis, args=(path,), daemon=True).start()
 
@@ -240,103 +170,353 @@ class AnalyzerApp:
             shutil.rmtree(extract_dir, ignore_errors=True)
             return
 
-        proc = subprocess.Popen(
-            [sys.executable, str(ANALYZER_DIR / "analyzer.py"), "--dir", str(extract_dir), "all"],
-            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-            cwd=str(ANALYZER_DIR),
-        )
-        try:
-            raw, _ = proc.communicate(timeout=600)
-        except subprocess.TimeoutExpired:
-            proc.kill()
-            proc.wait()
-            output = "(timed out after 10 min — dataset may be too large)"
-        else:
-            output = self._decode_output(raw)
+        export_dir = self._find_export_root(extract_dir)
+
+        def tick(msg):
+            self.root.after(0, lambda: self.status.configure(text=msg, fg=C["dim"]))
+
+        tick("Counting messages...")
+        msg = message_summary(export_dir)
+        dm_users = count_messages_by_dm_user(export_dir)
+        servers = count_messages_by_server(export_dir)
+        channels = count_messages_by_channel(export_dir)
+        timeline = message_timeline(export_dir, "month")
+
+        tick("Analyzing voice activity...")
+        voice = voice_summary(export_dir)
+
+        tick("Building dashboard...")
+        data = {
+            "msg": msg,
+            "dm_users": dm_users,
+            "servers": servers,
+            "channels": channels,
+            "timeline": timeline,
+            "voice": voice,
+        }
 
         shutil.rmtree(extract_dir, ignore_errors=True)
-        self.root.after(0, lambda: self._show_results(output))
+        self.root.after(0, lambda: self._build_dashboard(data))
 
-    @staticmethod
-    def _decode_output(raw: bytes) -> str:
-        """Decode subprocess output, handling Latin-1 characters in Discord data."""
-        for encoding in ("utf-8", "latin-1"):
-            try:
-                return raw.decode(encoding)
-            except UnicodeDecodeError:
-                continue
-        return raw.decode("utf-8", errors="replace")
-
-    def _show_results(self, text: str):
-        self.progress.stop()
-        self.progress.pack_forget()
-        self.select_btn.configure(state=tk.NORMAL)
-        self.new_btn.configure(state=tk.NORMAL)
-        self.save_btn.configure(state=tk.NORMAL)
-        self.drop_label.configure(
-            text="Drop your Discord ZIP here\nor click to select", fg=C["subtext"],
-        )
-
-        self.result_text.configure(state=tk.NORMAL)
-        self.result_text.delete("1.0", tk.END)
-
-        for line in text.split("\n"):
-            stripped = line.strip()
-            if stripped.startswith("===="):
-                self.result_text.insert(tk.END, line + "\n", "h1")
-            elif line.startswith("  ") and stripped and not stripped.startswith("─") and not stripped.startswith("="):
-                self.result_text.insert(tk.END, line + "\n", "h2")
-            elif line.startswith("───") or line.startswith("==="):
-                self.result_text.insert(tk.END, line + "\n", "dim")
-            elif "Error" in stripped or "error" in stripped.lower():
-                self.result_text.insert(tk.END, line + "\n", "err")
-            else:
-                self.result_text.insert(tk.END, line + "\n")
-
-        self.result_text.configure(state=tk.DISABLED)
-        self.result_text.see("1.0")
-        self._set_status("Analysis complete.", C["green"])
+    def _find_export_root(self, extract_dir: Path) -> Path:
+        """Discord ZIPs sometimes wrap everything in a subfolder."""
+        if (extract_dir / "Account").exists():
+            return extract_dir
+        for child in extract_dir.iterdir():
+            if child.is_dir() and (child / "Account").exists():
+                return child
+        return extract_dir
 
     def _show_error(self, msg: str):
         self.progress.stop()
         self.progress.pack_forget()
+        self.status.pack_forget()
         self.select_btn.configure(state=tk.NORMAL)
         self.drop_label.configure(
-            text="Drop your Discord ZIP here\nor click to select", fg=C["subtext"],
-        )
-        self._set_status(msg, C["red"])
+            text="Drop ZIP here\nor click to select", fg=C["dim"])
+        self.status.configure(text=msg, fg=C["red"])
+        self.status.pack()
 
-    def _save_results(self):
-        path = filedialog.asksaveasfilename(
-            title="Save Results",
-            defaultextension=".txt",
-            filetypes=[("Text files", "*.txt"), ("All files", "*.*")],
-        )
-        if path:
-            with open(path, "w", encoding="utf-8") as f:
-                f.write(self.result_text.get("1.0", tk.END))
-            self._set_status(f"Saved to {Path(path).name}", C["green"])
+    # -- Dashboard ------------------------------------------------------
 
-    def _reset(self):
-        self.result_text.configure(state=tk.NORMAL)
-        self.result_text.delete("1.0", tk.END)
-        self.result_text.configure(state=tk.DISABLED)
-        self.new_btn.configure(state=tk.DISABLED)
-        self.save_btn.configure(state=tk.DISABLED)
-        self.drop_label.configure(
-            text="Drop your Discord ZIP here\nor click to select", fg=C["subtext"],
-        )
-        self._set_status("Ready", C["subtext"])
+    def _build_dashboard(self, data: dict):
+        self._data = data
+        for w in self.root.winfo_children():
+            w.destroy()
 
-    def _set_status(self, msg: str, color: str = None):
-        self.status_bar.configure(text=msg, fg=color or C["subtext"])
+        # Scrollable canvas
+        self.canvas = tk.Canvas(self.root, bg=C["bg"], highlightthickness=0,
+                                 bd=0, relief=tk.FLAT)
+        scrollbar = tk.Scrollbar(self.root, orient=tk.VERTICAL,
+                                  command=self.canvas.yview)
+        self.content = tk.Frame(self.canvas, bg=C["bg"])
+
+        self.content.bind("<Configure>",
+            lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all")))
+        self.canvas.create_window((0, 0), window=self.content, anchor="nw",
+                                   width=self.root.winfo_width())
+        self.canvas.configure(yscrollcommand=scrollbar.set)
+
+        self.canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        # Mouse wheel scrolling
+        def _on_mousewheel(event):
+            self.canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+        self.canvas.bind_all("<MouseWheel>", _on_mousewheel)
+        self.canvas.bind("<Enter>",
+            lambda e: self.canvas.bind_all("<MouseWheel>", _on_mousewheel))
+        self.canvas.bind("<Leave>",
+            lambda e: self.canvas.unbind_all("<MouseWheel>"))
+
+        # Header
+        hdr = tk.Frame(self.content, bg=C["bg"])
+        hdr.pack(fill=tk.X, padx=32, pady=(28, 8))
+
+        tk.Label(hdr, text="Dashboard", font=("Segoe UI", 22, "bold"),
+                 fg=C["text"], bg=C["bg"]).pack(side=tk.LEFT)
+
+        new_btn = tk.Button(hdr, text="New Analysis", font=("Segoe UI", 10),
+                             bg=C["surface"], fg=C["text"],
+                             activebackground=C["overlay"], activeforeground=C["text"],
+                             relief=tk.FLAT, bd=0, padx=16, pady=6,
+                             cursor="hand2", command=self._build_landing)
+        new_btn.pack(side=tk.RIGHT)
+
+        # Summary cards
+        self._section_summary(data)
+
+        # DM leaderboard
+        self._section_dm_leaderboard(data)
+
+        # Servers
+        self._section_servers(data)
+
+        # Voice
+        self._section_voice(data)
+
+        # Timeline
+        self._section_timeline(data)
+
+    # -- Sections -------------------------------------------------------
+
+    def _section_summary(self, data):
+        m = data["msg"]
+        v = data["voice"]
+
+        cards = tk.Frame(self.content, bg=C["bg"])
+        cards.pack(fill=tk.X, padx=32, pady=(0, 12))
+
+        items = [
+            ("Total Messages", f"{m['total_messages']:,}", C["blue"]),
+            ("DM Messages", f"{m['dm_total']:,}", C["green"]),
+            ("Server Messages", f"{m['server_total']:,}", C["mauve"]),
+            ("Voice Time", v.get("total_duration_formatted", "0h 0m"), C["peach"]),
+            ("Voice Sessions", str(v.get("total_sessions", 0)), C["teal"]),
+        ]
+
+        for i, (label, value, color) in enumerate(items):
+            card = tk.Frame(cards, bg=C["surface"], padx=20, pady=14)
+            card.pack(side=tk.LEFT, padx=(0 if i == 0 else 8), expand=True,
+                       fill=tk.BOTH)
+
+            tk.Label(card, text=label, font=("Segoe UI", 9),
+                     fg=C["dim"], bg=C["surface"], anchor="w").pack(fill=tk.X)
+            tk.Label(card, text=value, font=("Segoe UI", 22, "bold"),
+                     fg=color, bg=C["surface"], anchor="w").pack(fill=tk.X)
+
+    def _section_dm_leaderboard(self, data):
+        dm_users = data["dm_users"]
+        self._section_header("Top DM Contacts", len(dm_users))
+        body = self._section_body()
+
+        top = dm_users[:12]
+        max_count = top[0][1] if top else 1
+
+        for i, (name, count) in enumerate(top):
+            row = tk.Frame(body, bg=C["base"])
+            row.pack(fill=tk.X, pady=1, padx=2)
+
+            rank = tk.Label(row, text=f"{i+1:>2}", font=("Consolas", 10),
+                            fg=C["dim"], bg=C["base"], width=3, anchor="e")
+            rank.pack(side=tk.LEFT)
+
+            uname = tk.Label(row, text=name[:24], font=("Segoe UI", 10),
+                             fg=C["text"], bg=C["base"], anchor="w", width=26)
+            uname.pack(side=tk.LEFT, padx=(8, 4))
+
+            bar_w = int(count / max_count * 280)
+            bar = tk.Canvas(row, bg=C["base"], height=16, width=280,
+                             highlightthickness=0, bd=0)
+            bar.pack(side=tk.LEFT, padx=(0, 8))
+            color = BAR_COLORS[i % len(BAR_COLORS)]
+            if bar_w > 0:
+                bar.create_rectangle(0, 2, bar_w, 14, fill=color, outline="",
+                                     width=0)
+
+            cnt = tk.Label(row, text=f"{count:,}", font=("Consolas", 10, "bold"),
+                           fg=C["subtext"], bg=C["base"], width=8, anchor="e")
+            cnt.pack(side=tk.RIGHT)
+
+    def _section_servers(self, data):
+        servers = [(n, c) for n, c in data["servers"] if n not in ("Direct Messages", "Unknown")]
+        self._section_header("Servers", len(servers))
+        body = self._section_body()
+
+        top = servers[:10]
+        max_count = top[0][1] if top else 1
+
+        for i, (name, count) in enumerate(top):
+            row = tk.Frame(body, bg=C["base"])
+            row.pack(fill=tk.X, pady=1, padx=2)
+
+            uname = tk.Label(row, text=name[:30], font=("Segoe UI", 10),
+                             fg=C["text"], bg=C["base"], anchor="w", width=32)
+            uname.pack(side=tk.LEFT, padx=(8, 4))
+
+            bar_w = int(count / max_count * 280)
+            bar = tk.Canvas(row, bg=C["base"], height=16, width=280,
+                             highlightthickness=0, bd=0)
+            bar.pack(side=tk.LEFT, padx=(0, 8))
+            color = BAR_COLORS[i % len(BAR_COLORS)]
+            if bar_w > 0:
+                bar.create_rectangle(0, 2, bar_w, 14, fill=color, outline="",
+                                     width=0)
+
+            cnt = tk.Label(row, text=f"{count:,}", font=("Consolas", 10, "bold"),
+                           fg=C["subtext"], bg=C["base"], width=8, anchor="e")
+            cnt.pack(side=tk.RIGHT)
+
+    def _section_voice(self, data):
+        v = data["voice"]
+        channel_durations = v.get("channel_durations", [])
+        dm_entries = [c for c in channel_durations if c["name_type"] == "dm"]
+        sv_entries = [c for c in channel_durations if c["name_type"] == "server"]
+
+        self._section_header("Voice Calls", v.get("total_sessions", 0))
+        body = self._section_body()
+
+        if dm_entries:
+            tk.Label(body, text="DM Calls", font=("Segoe UI", 9, "bold"),
+                     fg=C["green"], bg=C["base"]).pack(anchor="w", padx=10,
+                     pady=(8, 4))
+
+            top = dm_entries[:10]
+            max_sec = top[0]["duration_seconds"] if top else 1
+
+            for i, c in enumerate(top):
+                row = tk.Frame(body, bg=C["base"])
+                row.pack(fill=tk.X, pady=1, padx=2)
+
+                uname = tk.Label(row, text=c["name"][:24],
+                                 font=("Segoe UI", 10), fg=C["text"],
+                                 bg=C["base"], anchor="w", width=26)
+                uname.pack(side=tk.LEFT, padx=(8, 4))
+
+                bar_w = int(c["duration_seconds"] / max_sec * 240)
+                bar = tk.Canvas(row, bg=C["base"], height=16, width=240,
+                                 highlightthickness=0, bd=0)
+                bar.pack(side=tk.LEFT, padx=(0, 8))
+                color = BAR_COLORS[i % len(BAR_COLORS)]
+                if bar_w > 0:
+                    bar.create_rectangle(0, 2, bar_w, 14, fill=color,
+                                         outline="", width=0)
+
+                h = c["duration_seconds"] // 3600
+                m = (c["duration_seconds"] % 3600) // 60
+                dur_str = f"{h}h {m}m"
+                cnt = tk.Label(row, text=dur_str,
+                               font=("Consolas", 9, "bold"),
+                               fg=C["subtext"], bg=C["base"], width=9,
+                               anchor="e")
+                cnt.pack(side=tk.RIGHT)
+
+        if sv_entries:
+            tk.Label(body, text="Server Channels", font=("Segoe UI", 9, "bold"),
+                     fg=C["mauve"], bg=C["base"]).pack(anchor="w", padx=10,
+                     pady=(12, 4))
+
+            for c in sv_entries[:8]:
+                row = tk.Frame(body, bg=C["base"])
+                row.pack(fill=tk.X, pady=1, padx=2)
+
+                name = c["name"][:36]
+                uname = tk.Label(row, text=name, font=("Segoe UI", 10),
+                                 fg=C["text"], bg=C["base"], anchor="w",
+                                 width=38)
+                uname.pack(side=tk.LEFT, padx=(8, 4))
+
+                h = c["duration_seconds"] // 3600
+                m = (c["duration_seconds"] % 3600) // 60
+                dur_str = f"{h}h {m}m"
+                cnt = tk.Label(row, text=dur_str,
+                               font=("Consolas", 9, "bold"),
+                               fg=C["subtext"], bg=C["base"], width=9,
+                               anchor="e")
+                cnt.pack(side=tk.RIGHT)
+
+    def _section_timeline(self, data):
+        timeline = data["timeline"]
+        self._section_header("Message Timeline", f"{len(timeline)} months")
+        body = self._section_body()
+
+        items = list(timeline.items())
+        items.sort()
+        if len(items) > 24:
+            items = items[-24:]
+        max_count = max(c for _, c in items) if items else 1
+
+        canvas_h = 180
+        canvas = tk.Canvas(body, bg=C["base"], height=canvas_h,
+                            highlightthickness=0, bd=0, width=780)
+        canvas.pack(fill=tk.X, padx=8, pady=(8, 8))
+
+        bar_area_left = 40
+        bar_area_right = 760
+        bar_area_top = 10
+        bar_area_bottom = canvas_h - 24
+        bar_area_w = bar_area_right - bar_area_left
+        bar_area_h = bar_area_bottom - bar_area_top
+
+        # Grid lines
+        for pct in (0.25, 0.5, 0.75):
+            y = bar_area_bottom - int(bar_area_h * pct)
+            canvas.create_line(bar_area_left, y, bar_area_right, y,
+                                fill=C["surface0"], width=1)
+
+        # Bars
+        n = len(items)
+        bar_gap = 3
+        total_gap = bar_gap * (n + 1)
+        bar_width = (bar_area_w - total_gap) / n if n > 0 else 1
+
+        for i, (period, count) in enumerate(items):
+            x0 = bar_area_left + bar_gap + i * (bar_width + bar_gap)
+            x1 = x0 + bar_width
+            bar_height = int(count / max_count * bar_area_h) if max_count else 0
+            y0 = bar_area_bottom - bar_height
+            y1 = bar_area_bottom
+
+            color = BAR_COLORS[i % len(BAR_COLORS)]
+            canvas.create_rectangle(x0, y0, x1, y1, fill=color, outline="",
+                                     width=0)
+
+            # Label every 3rd bar
+            if i % 3 == 0 and len(period) >= 7:
+                label = period[2:7]
+                canvas.create_text((x0 + x1) / 2, bar_area_bottom + 12,
+                                    text=label, fill=C["dim"],
+                                    font=("Consolas", 7), angle=45,
+                                    anchor="nw")
+
+        # Max label
+        canvas.create_text(bar_area_left - 6, bar_area_top,
+                            text=str(max_count), fill=C["dim"],
+                            font=("Consolas", 8), anchor="ne")
+
+    # -- Helpers --------------------------------------------------------
+
+    def _section_header(self, title: str, count: int):
+        hdr = tk.Frame(self.content, bg=C["bg"])
+        hdr.pack(fill=tk.X, padx=32, pady=(16, 0))
+        tk.Label(hdr, text=title, font=("Segoe UI", 14, "bold"),
+                 fg=C["text"], bg=C["bg"]).pack(side=tk.LEFT)
+        tk.Label(hdr, text=str(count), font=("Segoe UI", 12, "bold"),
+                 fg=C["blue"], bg=C["bg"]).pack(side=tk.LEFT, padx=(8, 0))
+
+    def _section_body(self) -> tk.Frame:
+        outer = tk.Frame(self.content, bg=C["surface"])
+        outer.pack(fill=tk.X, padx=32, pady=(4, 0))
+        body = tk.Frame(outer, bg=C["base"], padx=1, pady=4)
+        body.pack(fill=tk.BOTH, expand=True, padx=12, pady=10)
+        return body
 
     def run(self):
         self.root.mainloop()
 
 
 def main():
-    app = AnalyzerApp()
+    app = DashboardApp()
     app.run()
 
 
