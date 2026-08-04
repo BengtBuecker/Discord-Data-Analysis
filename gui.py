@@ -240,23 +240,32 @@ class AnalyzerApp:
             shutil.rmtree(extract_dir, ignore_errors=True)
             return
 
-        out_path = extract_dir / "_analysis_output.txt"
+        proc = subprocess.Popen(
+            [sys.executable, str(ANALYZER_DIR / "analyzer.py"), "--dir", str(extract_dir), "all"],
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            cwd=str(ANALYZER_DIR),
+        )
         try:
-            with open(out_path, "w", encoding="utf-8") as outf:
-                subprocess.run(
-                    [sys.executable, str(ANALYZER_DIR / "analyzer.py"), "--dir", str(extract_dir), "all"],
-                    stdout=outf, stderr=subprocess.STDOUT, text=True,
-                    timeout=600, cwd=str(ANALYZER_DIR),
-                )
-            output = out_path.read_text(encoding="utf-8")
+            raw, _ = proc.communicate(timeout=600)
         except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
             output = "(timed out after 10 min — dataset may be too large)"
-        except Exception as e:
-            output = f"Error: {e}"
+        else:
+            output = self._decode_output(raw)
 
         shutil.rmtree(extract_dir, ignore_errors=True)
-
         self.root.after(0, lambda: self._show_results(output))
+
+    @staticmethod
+    def _decode_output(raw: bytes) -> str:
+        """Decode subprocess output, handling Latin-1 characters in Discord data."""
+        for encoding in ("utf-8", "latin-1"):
+            try:
+                return raw.decode(encoding)
+            except UnicodeDecodeError:
+                continue
+        return raw.decode("utf-8", errors="replace")
 
     def _show_results(self, text: str):
         self.progress.stop()
