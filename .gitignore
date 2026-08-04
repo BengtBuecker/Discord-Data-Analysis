@@ -17,3 +17,7 @@ Thumbs.db
 # IDE
 .idea/
 .vscode/
+
+# Tooling
+.omo/
+.opencode/
