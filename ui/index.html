@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Discord Data Analyzer</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ═══════════════ Landing Page ═══════════════ -->
+<div id="landing" class="landing">
+  <div class="landing-icon">⬡</div>
+  <h1>Discord Data Analyzer</h1>
+  <p>Drop your Discord GDPR ZIP to get started</p>
+
+  <div id="dropzone" class="dropzone" tabindex="0">
+    <div class="dropzone-icon">📂</div>
+    <div class="dropzone-label">Drop ZIP here<br>or click to select</div>
+  </div>
+
+  <button id="selectBtn" class="btn btn-primary">Select ZIP File</button>
+
+  <div id="statusMsg" style="margin-top:var(--sp-lg);color:var(--color-dim);font-size:var(--fs-sm);display:none;"></div>
+</div>
+
+<!-- ═══════════════ Loading Overlay ═══════════════ -->
+<div id="loading" class="loading-overlay hidden">
+  <div class="spinner"></div>
+  <p id="loadingText" style="color:var(--color-dim);font-size:var(--fs-sm);">Analyzing...</p>
+</div>
+
+<!-- ═══════════════ Dashboard ═══════════════ -->
+<div id="dashboard" class="dashboard" style="display:none;">
+  <header class="dashboard-header">
+    <div class="dashboard-header-left">
+      <span class="logo-icon">⬡</span>
+      <h1>Dashboard</h1>
+    </div>
+    <button id="newAnalysisBtn" class="btn btn-secondary btn-sm">New Analysis</button>
+  </header>
+
+  <div class="dashboard-body">
+    <div class="dashboard-body-inner">
+
+      <!-- Summary Cards -->
+      <div id="summaryGrid" class="summary-grid"></div>
+
+      <div id="leaderboardGrid" class="leaderboard-grid">
+        <div id="dmSection" class="section"></div>
+        <div id="serversSection" class="section"></div>
+      </div>
+
+      <!-- Voice Section -->
+      <div id="voiceSection" class="section"></div>
+
+      <!-- Timeline Section -->
+      <div id="timelineSection" class="section"></div>
+
+    </div>
+  </div>
+</div>
+
+<!-- Tooltip singleton -->
+<div id="tooltip" class="timeline-tooltip"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
