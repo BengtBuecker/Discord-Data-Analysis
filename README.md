@@ -20,7 +20,7 @@ CLI tool to analyze Discord GDPR data exports. Parse your exported JSON files to
 
 ```bash
 # Clone and enter the repo
-cd discord-analyzer
+cd Discord-Data-Analysis
 
 # Point at your Discord data export directory
 python analyzer.py --dir "path/to/your/discord/export" <command>
