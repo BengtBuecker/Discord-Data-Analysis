@@ -372,13 +372,12 @@ function renderMonthDrilldown(month) {
   const maxDay = dayEntries.length ? Math.max(...dayEntries.map(e => e[1])) : 1;
   const dn = dayEntries.length;
 
-  let dayBody = "";
+  let dayChartHtml = "";
   if (dayEntries.length) {
     const DAY_LEFT = 36;
     const DAY_RIGHT = 20;
 
-    let dayGrid = "";
-    dayGrid += `<div class="timeline-grid-line" style="top:25%"></div>`;
+    let dayGrid = `<div class="timeline-grid-line" style="top:25%"></div>`;
     dayGrid += `<div class="timeline-grid-line" style="top:50%"></div>`;
     dayGrid += `<div class="timeline-grid-line" style="top:75%"></div>`;
 
@@ -401,21 +400,23 @@ function renderMonthDrilldown(month) {
       }
     });
 
-    dayBody = `
-      <div class="timeline-chart">
-        ${dayGrid}
-        <div class="timeline-bars">${dayBars}</div>
-        ${dayLabels}
-        <div class="timeline-max-label">${nf(maxDay)}</div>
+    dayChartHtml = `
+      <div class="section" style="margin-bottom:var(--sp-lg);">
+        <div class="section-header" style="border-bottom:none;margin-bottom:0;padding-bottom:4px;cursor:default;">
+          <span class="section-title">Daily Breakdown</span>
+          <span class="section-subtitle">${dayEntries.length} days</span>
+        </div>
+        <div class="timeline-chart" style="margin-top:0;">
+          ${dayGrid}
+          <div class="timeline-bars">${dayBars}</div>
+          ${dayLabels}
+          <div class="timeline-max-label">${nf(maxDay)}</div>
+        </div>
       </div>
     `;
-  } else {
-    dayBody = `<div class="empty-state">No daily data available</div>`;
   }
 
-  EL("drilldownDayChart").innerHTML = sectionTemplate("drilldown-days", "Daily Breakdown",
-    `${dayEntries.length} days`, false, dayBody);
-  bindSectionEvents("drilldown-days");
+  EL("drilldownDayChart").innerHTML = dayChartHtml;
   bindDayChartHover();
 
   const dmUsers = data.dm_users || [];
