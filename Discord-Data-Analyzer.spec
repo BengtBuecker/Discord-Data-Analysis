@@ -5,7 +5,7 @@ a = Analysis(
     ['main.py'],
     pathex=[SPECPATH],
     binaries=[],
-    datas=[('ui/index.html', 'ui'), ('ui/style.css', 'ui'), ('ui/app.js', 'ui')],
+    datas=[('ui/index.html', 'ui'), ('ui/style.css', 'ui'), ('ui/app.js', 'ui'), ('ui/Logo.png', 'ui')],
     hiddenimports=['api', 'analyzers', 'analyzers.messages', 'analyzers.voice', 'utils', 'utils.parser', 'utils.formatting', 'webview', 'tkinter'],
     hookspath=[],
     hooksconfig={},
