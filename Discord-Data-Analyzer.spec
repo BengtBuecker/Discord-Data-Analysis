@@ -23,6 +23,7 @@ exe = EXE(
     a.datas,
     [],
     name='Discord-Data-Analyzer',
+    icon='ui/Logo.ico',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
