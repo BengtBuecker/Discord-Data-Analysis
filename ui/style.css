@@ -683,6 +683,29 @@ body {
   opacity: .85;
 }
 
+.timeline-bar.active {
+  box-shadow: 0 0 0 2px var(--clr-accent);
+  opacity: 1;
+  z-index: 1;
+  position: relative;
+}
+
+/* ── Month Drill‑down ── */
+
+.drilldown-header {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-md);
+  padding: var(--sp-md) 0;
+  margin-bottom: var(--sp-sm);
+}
+
+.drilldown-title {
+  font-size: var(--fs-lg);
+  font-weight: 600;
+  color: var(--color-text);
+}
+
 .timeline-label {
   position: absolute;
   bottom: 6px;

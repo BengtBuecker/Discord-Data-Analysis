@@ -69,6 +69,7 @@ class AnalyzerApi:
             "dm_users": msg["dm_users"],
             "servers": msg["servers"],
             "timeline": msg["timeline"],
+            "per_month": msg.get("per_month", {}),
             "voice": {
                 "total_sessions": voice.get("total_sessions", 0),
                 "total_duration_formatted": voice.get("total_duration_formatted", "0h 0m"),
