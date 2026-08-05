@@ -25,7 +25,7 @@ jobs:
         run: pip install pyinstaller pywebview
 
       - name: Build EXE
-        run: pyinstaller --onefile --windowed --add-data "ui/index.html;ui" --add-data "ui/style.css;ui" --add-data "ui/app.js;ui" --hidden-import api --hidden-import analyzers --hidden-import analyzers.messages --hidden-import analyzers.voice --hidden-import utils --hidden-import utils.parser --hidden-import utils.formatting --name "Discord-Data-Analyzer" main.py
+        run: pyinstaller --onefile --windowed --add-data "ui/index.html;ui" --add-data "ui/style.css;ui" --add-data "ui/app.js;ui" --hidden-import api --hidden-import analyzers --hidden-import analyzers.messages --hidden-import analyzers.voice --hidden-import utils --hidden-import utils.parser --hidden-import utils.formatting --hidden-import tkinter --name "Discord-Data-Analyzer" main.py
 
       - name: Verify EXE exists
         shell: bash

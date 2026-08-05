@@ -21,29 +21,20 @@ class AnalyzerApi:
         self._export_dir = None
 
     def selectFile(self) -> str:
-        import subprocess
-        import sys
+        """Open native file dialog. Uses tkinter directly — no subprocess."""
+        import tkinter as tk
+        from tkinter import filedialog
 
-        code = r"""
-import tkinter as tk
-from tkinter import filedialog
-root = tk.Tk()
-root.withdraw()
-root.attributes('-topmost', True)
-path = filedialog.askopenfilename(
-    title='Select Discord Data ZIP',
-    filetypes=[('ZIP files', '*.zip'), ('All files', '*.*')]
-)
-if path:
-    print(path)
-root.destroy()
-"""
         try:
-            result = subprocess.run(
-                [sys.executable, "-c", code],
-                capture_output=True, text=True, timeout=120,
+            root = tk.Tk()
+            root.withdraw()
+            root.attributes("-topmost", True)
+            path = filedialog.askopenfilename(
+                title="Select Discord Data ZIP",
+                filetypes=[("ZIP files", "*.zip"), ("All files", "*.*")],
             )
-            return result.stdout.strip()
+            root.destroy()
+            return path or ""
         except Exception:
             return ""
 

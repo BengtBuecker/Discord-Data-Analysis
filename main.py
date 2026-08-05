@@ -19,9 +19,10 @@ try:
 except ImportError:
     HAS_WEBVIEW = False
 
+from api import AnalyzerApi  # top-level so PyInstaller's static analysis finds it
+
 
 def run_webview():
-    from api import AnalyzerApi
     api = AnalyzerApi()
 
     html_path = str(UI_DIR / "index.html")
