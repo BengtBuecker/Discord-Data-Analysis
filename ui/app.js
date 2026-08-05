@@ -366,6 +366,28 @@ function renderMonthDrilldown(month) {
   section.style.display = "";
   title.textContent = formatMonthLabel(month) + " — " + nf(data.total) + " messages";
 
+  // ── Day chart: horizontal bars for each day of the month ──
+  const days = data.days || {};
+  const dayEntries = Object.entries(days);
+  const maxDay = dayEntries.length ? Math.max(...dayEntries.map(e => e[1])) : 1;
+
+  let dayBody = "";
+  if (dayEntries.length) {
+    dayEntries.forEach((entry, i) => {
+      const [date, count] = entry;
+      const dayNum = date.length >= 10 ? date.slice(8, 10) : date;
+      const label = parseInt(dayNum, 10) + suffix(parseInt(dayNum, 10));
+      dayBody += barRow(0, label, count, maxDay, i, "msgs");
+    });
+    dayBody = `<div class="day-chart-bars">${dayBody}</div>`;
+  } else {
+    dayBody = `<div class="empty-state">No daily data available</div>`;
+  }
+
+  EL("drilldownDayChart").innerHTML = sectionTemplate("drilldown-days", "Daily Breakdown",
+    `${dayEntries.length} days`, false, dayBody);
+  bindSectionEvents("drilldown-days");
+
   const dmUsers = data.dm_users || [];
   const servers = data.servers || [];
   const maxDM = dmUsers.length ? dmUsers[0][1] : 1;
@@ -410,6 +432,7 @@ function bindSectionEvents(sectionId) {
     : sectionId === "voice" ? EL("voiceSection")
     : sectionId === "drilldown-dm" ? EL("drilldownDM")
     : sectionId === "drilldown-sv" ? EL("drilldownServers")
+    : sectionId === "drilldown-days" ? EL("drilldownDayChart")
     : EL("timelineSection");
 
   // Collapse toggle
@@ -505,6 +528,7 @@ function toggleSection(id) {
     : id === "voice" ? EL("voiceSection")
     : id === "drilldown-dm" ? EL("drilldownDM")
     : id === "drilldown-sv" ? EL("drilldownServers")
+    : id === "drilldown-days" ? EL("drilldownDayChart")
     : EL("timelineSection");
 
   const header = el.querySelector(".section-header");
@@ -558,6 +582,14 @@ function hideTooltip() {
 
 function nf(n) { return n?.toLocaleString() ?? "0"; }
 function esc(s) { return String(s).replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+function suffix(d) {
+  if (d >= 11 && d <= 13) return "th";
+  const last = d % 10;
+  if (last === 1) return "st";
+  if (last === 2) return "nd";
+  if (last === 3) return "rd";
+  return "th";
+}
 function formatHMS(sec) {
   const h = Math.floor(sec / 3600);
   const m = Math.floor((sec % 3600) / 60);

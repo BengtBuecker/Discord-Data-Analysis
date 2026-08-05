@@ -130,6 +130,8 @@ def full_summary(export_dir: Path, granularity: str = "month") -> dict:
     # ── per-month breakdown: { month: { "dm_users": {user: count}, "servers": {server: count} } }
     per_month_dm: Dict[str, Dict[str, int]] = defaultdict(lambda: defaultdict(int))
     per_month_server: Dict[str, Dict[str, int]] = defaultdict(lambda: defaultdict(int))
+    per_month_days: Dict[str, Dict[str, int]] = defaultdict(lambda: defaultdict(int))
+    day_fmt = "%Y-%m-%d"
 
     for channel_dir, channel_id, name, messages in _channel_entries(export_dir):
         count = len(messages)
@@ -151,6 +153,9 @@ def full_summary(export_dir: Path, granularity: str = "month") -> dict:
                     per_month_dm[key][username] += 1
                 else:
                     per_month_server[key][server_name] += 1
+                day_key = _timeline_key(msg.get("Timestamp", ""), day_fmt)
+                if day_key:
+                    per_month_days[key][day_key] += 1
 
     dm_users = sorted(user_counts.items(), key=lambda x: x[1], reverse=True)
     servers = sorted(server_counts.items(), key=lambda x: x[1], reverse=True)
@@ -167,6 +172,7 @@ def full_summary(export_dir: Path, granularity: str = "month") -> dict:
             "dm_users": dm_sorted,
             "servers": sv_sorted,
             "total": sum(v for _, v in dm_sorted) + sum(v for _, v in sv_sorted),
+            "days": dict(sorted(per_month_days.get(month, {}).items())),
         }
 
     return {
