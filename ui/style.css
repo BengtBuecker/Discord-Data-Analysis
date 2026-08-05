@@ -706,19 +706,6 @@ body {
   color: var(--color-text);
 }
 
-.day-chart-bars {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-}
-
-.day-chart-bars .bar-row .bar-name {
-  width: 48px;
-  min-width: 48px;
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-}
-
 .timeline-label {
   position: absolute;
   bottom: 6px;

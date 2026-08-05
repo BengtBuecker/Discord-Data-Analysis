@@ -366,20 +366,49 @@ function renderMonthDrilldown(month) {
   section.style.display = "";
   title.textContent = formatMonthLabel(month) + " — " + nf(data.total) + " messages";
 
-  // ── Day chart: horizontal bars for each day of the month ──
+  // ── Day chart: vertical bars for each day of the month ──
   const days = data.days || {};
   const dayEntries = Object.entries(days);
   const maxDay = dayEntries.length ? Math.max(...dayEntries.map(e => e[1])) : 1;
+  const dn = dayEntries.length;
 
   let dayBody = "";
   if (dayEntries.length) {
-    dayEntries.forEach((entry, i) => {
+    const DAY_LEFT = 36;
+    const DAY_RIGHT = 20;
+
+    let dayGrid = "";
+    dayGrid += `<div class="timeline-grid-line" style="top:25%"></div>`;
+    dayGrid += `<div class="timeline-grid-line" style="top:50%"></div>`;
+    dayGrid += `<div class="timeline-grid-line" style="top:75%"></div>`;
+
+    const dayBars = dayEntries.map((entry, i) => {
       const [date, count] = entry;
+      const h = (count / maxDay * 100).toFixed(1);
+      const color = BAR_COLORS[i % BAR_COLORS.length];
       const dayNum = date.length >= 10 ? date.slice(8, 10) : date;
       const label = parseInt(dayNum, 10) + suffix(parseInt(dayNum, 10));
-      dayBody += barRow(0, label, count, maxDay, i, "msgs");
+      return `<div class="timeline-bar" style="height:${h}%;background:${color};" data-tip="${label}: ${nf(count)} msgs"></div>`;
+    }).join("");
+
+    let dayLabels = "";
+    dayEntries.forEach((entry, i) => {
+      const step = dn <= 15 ? 2 : dn <= 25 ? 3 : 4;
+      if (i % step === 0 || i === dn - 1) {
+        const date = entry[0];
+        const dayNum = date.length >= 10 ? parseInt(date.slice(8, 10), 10) : i + 1;
+        dayLabels += `<div class="timeline-label" style="left:calc(${DAY_LEFT}px + ${(i + 0.5)} * (100% - ${DAY_LEFT + DAY_RIGHT}px) / ${dn});">${dayNum}</div>`;
+      }
     });
-    dayBody = `<div class="day-chart-bars">${dayBody}</div>`;
+
+    dayBody = `
+      <div class="timeline-chart">
+        ${dayGrid}
+        <div class="timeline-bars">${dayBars}</div>
+        ${dayLabels}
+        <div class="timeline-max-label">${nf(maxDay)}</div>
+      </div>
+    `;
   } else {
     dayBody = `<div class="empty-state">No daily data available</div>`;
   }
@@ -387,6 +416,7 @@ function renderMonthDrilldown(month) {
   EL("drilldownDayChart").innerHTML = sectionTemplate("drilldown-days", "Daily Breakdown",
     `${dayEntries.length} days`, false, dayBody);
   bindSectionEvents("drilldown-days");
+  bindDayChartHover();
 
   const dmUsers = data.dm_users || [];
   const servers = data.servers || [];
@@ -475,6 +505,26 @@ function bindVoiceChips() {
     chip.addEventListener("click", () => {
       state.voiceFilter = chip.dataset.vf;
       renderVoiceSection(state.data);
+    });
+  });
+}
+
+function bindDayChartHover() {
+  const section = EL("drilldownDayChart");
+  if (!section) return;
+  const bars = section.querySelectorAll(".timeline-bar");
+  const tip = EL("tooltip");
+  bars.forEach(bar => {
+    bar.addEventListener("mouseenter", () => {
+      tip.textContent = bar.dataset.tip;
+      tip.classList.add("visible");
+    });
+    bar.addEventListener("mousemove", (e) => {
+      tip.style.left = (e.clientX + 12) + "px";
+      tip.style.top = (e.clientY - 28) + "px";
+    });
+    bar.addEventListener("mouseleave", () => {
+      tip.classList.remove("visible");
     });
   });
 }
