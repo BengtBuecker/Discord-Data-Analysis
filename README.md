@@ -3,6 +3,7 @@
   <img src="https://img.shields.io/badge/dependencies-pywebview-blue.svg" alt="PyWebView">
   <img src="https://img.shields.io/badge/privacy-local-9cf.svg" alt="100% Local">
   <img src="https://img.shields.io/badge/desktop-GUI-89b4fa.svg" alt="Desktop GUI">
+  <img src="https://img.shields.io/badge/version-2.0.2-a6e3a1.svg" alt="v2.0.2">
 </p>
 
 <h1 align="center">🔍 Discord Data Analyzer</h1>
@@ -64,7 +65,17 @@ python analyzer.py --dir "path/to/discord/export" all
 
 ```bash
 pip install pyinstaller pywebview
-pyinstaller --onefile --windowed --name "Discord-Data-Analyzer" main.py
+pyinstaller --onefile --windowed \
+  --add-data "ui/index.html;ui" \
+  --add-data "ui/style.css;ui" \
+  --add-data "ui/app.js;ui" \
+  --hidden-import api \
+  --hidden-import analyzers.messages \
+  --hidden-import analyzers.voice \
+  --hidden-import utils.parser \
+  --hidden-import utils.formatting \
+  --hidden-import tkinter \
+  --name "Discord-Data-Analyzer" main.py
 # → dist/Discord-Data-Analyzer.exe
 ```
 
@@ -184,3 +195,14 @@ your-export/
 └── Server/
     └── index.json          ← guild ID → server name mapping
 ```
+
+---
+
+## 📝 Changelog
+
+### v2.0.2 (2026-08-05)
+
+**Bug fixes:**
+- Fixed `ModuleNotFoundError: No module named 'api'` in the compiled `.exe` — the deferred import inside `run_webview()` was invisible to PyInstaller's static analysis. Moved to top-level import.
+- Fixed file dialog opening a second app instance instead of a file picker — `sys.executable` in the frozen `.exe` pointed to the app itself, not a Python interpreter. Switched to direct tkinter dialog.
+- Fixed Message Timeline chart showing no bars — the percentage-based positioning math broke with many months, pushing bars off-screen with sub-1% widths. Replaced with flexbox layout.
