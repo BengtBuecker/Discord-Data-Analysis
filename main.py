@@ -39,7 +39,30 @@ def run_webview():
     webview.start(debug=False, private_mode=False)
 
 
+def self_test() -> int:
+    """Verify the running environment can serve the app: modules import
+    and UI assets are present. Run via `--self-test` (used by CI against
+    the frozen .exe before it ships in a release).
+    """
+    checks = [
+        ("AnalyzerApi has analyzeZip", hasattr(AnalyzerApi, "analyzeZip")),
+        ("AnalyzerApi has selectFile", hasattr(AnalyzerApi, "selectFile")),
+        ("UI_DIR exists", UI_DIR.exists()),
+        ("index.html present", (UI_DIR / "index.html").exists()),
+        ("app.js present", (UI_DIR / "app.js").exists()),
+        ("style.css present", (UI_DIR / "style.css").exists()),
+    ]
+    all_passed = True
+    for label, passed in checks:
+        print(f"  [{'OK' if passed else 'FAIL'}] {label}")
+        all_passed = all_passed and passed
+    return 0 if all_passed else 1
+
+
 def main():
+    if "--self-test" in sys.argv:
+        sys.exit(self_test())
+
     if not HAS_WEBVIEW:
         print("=" * 60)
         print("  Discord Data Analyzer")
