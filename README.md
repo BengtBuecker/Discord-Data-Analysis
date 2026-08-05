@@ -3,7 +3,7 @@
   <img src="https://img.shields.io/badge/dependencies-pywebview-blue.svg" alt="PyWebView">
   <img src="https://img.shields.io/badge/privacy-local-9cf.svg" alt="100% Local">
   <img src="https://img.shields.io/badge/desktop-GUI-89b4fa.svg" alt="Desktop GUI">
-  <img src="https://img.shields.io/badge/version-2.0.2-a6e3a1.svg" alt="v2.0.2">
+  <img src="https://img.shields.io/badge/version-2.1.0-a6e3a1.svg" alt="v2.1.0">
 </p>
 
 <h1 align="center">🔍 Discord Data Analyzer</h1>
