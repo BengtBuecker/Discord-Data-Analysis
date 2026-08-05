@@ -295,29 +295,33 @@ function renderTimeline(d) {
   const months = entries.slice(-24);
   const maxCount = Math.max(...months.map(e => e[1]), 1);
 
-  let bars = "", gridLines = "", labels = "";
   const n = months.length;
-  const barGap = 3;
+  const LEFT_OFFSET = 44;  // px — aligns with .timeline-grid-line
+  const RIGHT_OFFSET = 16; // px — aligns with .timeline-grid-line
 
+  let gridLines = "", labels = "";
   gridLines += `<div class="timeline-grid-line" style="top:25%"></div>`;
   gridLines += `<div class="timeline-grid-line" style="top:50%"></div>`;
   gridLines += `<div class="timeline-grid-line" style="top:75%"></div>`;
 
-  months.forEach((entry, i) => {
+  const bars = months.map((entry, i) => {
     const [period, count] = entry;
+    const h = (count / maxCount * 100).toFixed(1);
     const color = BAR_COLORS[i % BAR_COLORS.length];
-    const h = (count / maxCount * 100);
-    bars += `<div class="timeline-bar" style="left:${44 + (i / n * (100 - 18)).toFixed(1)}%;width:${Math.max(((90 - 2) / n) - barGap / 10, 0.3).toFixed(1)}%;height:${h.toFixed(1)}%;background:${color};" data-tip="${period}: ${nf(count)} messages"></div>`;
+    return `<div class="timeline-bar" style="height:${h}%;background:${color};" data-tip="${period}: ${nf(count)} messages"></div>`;
+  }).join("");
+
+  months.forEach((entry, i) => {
     if (i % 3 === 0 || n <= 12) {
-      const label = period.length >= 7 ? period.slice(2, 7) : period;
-      labels += `<div class="timeline-label" style="left:${44 + ((i + 0.5) / n * (100 - 18)).toFixed(1)}%;">${label}</div>`;
+      const label = entry[0].length >= 7 ? entry[0].slice(2, 7) : entry[0];
+      labels += `<div class="timeline-label" style="left:calc(${LEFT_OFFSET}px + ${(i + 0.5)} * (100% - ${LEFT_OFFSET + RIGHT_OFFSET}px) / ${n});">${label}</div>`;
     }
   });
 
   const body = `
     <div class="timeline-chart">
       ${gridLines}
-      ${bars}
+      <div class="timeline-bars">${bars}</div>
       ${labels}
       <div class="timeline-max-label">${nf(maxCount)}</div>
     </div>
