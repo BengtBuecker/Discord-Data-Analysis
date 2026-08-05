@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 from analyzers.voice import (
     VoiceSession,
-    _parse_ts,
+    _parse_timestamp,
     _iter_matching_lines,
     _grep_json_lines,
     _stream_rtc_events_via_grep,
@@ -17,43 +17,43 @@ from analyzers.voice import (
 )
 
 
-class TestParseTs:
+class TestParseTimestamp:
     def test_parses_standard_format(self):
-        dt = _parse_ts("2024-06-01 12:00:00")
+        dt = _parse_timestamp("2024-06-01 12:00:00")
         assert dt == datetime(2024, 6, 1, 12, 0, 0)
 
     def test_parses_with_microseconds(self):
-        dt = _parse_ts("2024-06-01 12:00:00.123456")
+        dt = _parse_timestamp("2024-06-01 12:00:00.123456")
         assert dt.microsecond == 123456
 
     def test_parses_iso_format(self):
-        dt = _parse_ts("2024-06-01T12:00:00Z")
+        dt = _parse_timestamp("2024-06-01T12:00:00Z")
         assert dt == datetime(2024, 6, 1, 12, 0, 0)
 
     def test_parses_iso_with_ms(self):
-        dt = _parse_ts("2024-06-01T12:00:00.500Z")
+        dt = _parse_timestamp("2024-06-01T12:00:00.500Z")
         assert dt.microsecond == 500000
 
     def test_parses_with_utc_suffix(self):
-        dt = _parse_ts("2024-06-01 12:00:00 UTC")
+        dt = _parse_timestamp("2024-06-01 12:00:00 UTC")
         assert dt == datetime(2024, 6, 1, 12, 0, 0)
 
     def test_strips_quotes(self):
-        dt = _parse_ts('"2024-06-01 12:00:00"')
+        dt = _parse_timestamp('"2024-06-01 12:00:00"')
         assert dt == datetime(2024, 6, 1, 12, 0, 0)
 
     def test_returns_none_for_empty(self):
-        assert _parse_ts("") is None
-        assert _parse_ts(None) is None
+        assert _parse_timestamp("") is None
+        assert _parse_timestamp(None) is None
 
     def test_returns_none_for_invalid(self):
-        assert _parse_ts("not a date at all") is None
+        assert _parse_timestamp("not a date at all") is None
 
     def test_returns_none_for_zero(self):
-        assert _parse_ts(0) is None
+        assert _parse_timestamp(0) is None
 
     def test_returns_none_for_numeric_string(self):
-        assert _parse_ts("1000") is None
+        assert _parse_timestamp("1000") is None
 
 
 class TestIterMatchingLines:

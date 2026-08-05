@@ -32,7 +32,7 @@ class VoiceSession:
     duration_seconds: float
 
 
-def _parse_ts(ts_str: object) -> Optional[datetime]:
+def _parse_timestamp(ts_str: object) -> Optional[datetime]:
     """Parse various timestamp formats from analytics events."""
     if not ts_str:
         return None
@@ -193,7 +193,7 @@ def detect_voice_sessions(
         init_ts_raw = sessions_init_ts.get(sid)
         if not init_ts_raw:
             continue
-        init_dt = _parse_ts(init_ts_raw)
+        init_dt = _parse_timestamp(init_ts_raw)
         if init_dt is None:
             continue
 

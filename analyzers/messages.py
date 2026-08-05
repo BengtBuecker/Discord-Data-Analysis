@@ -16,12 +16,22 @@ from utils.parser import (
 
 
 def _channel_entries(export_dir: Path) -> Iterator[Tuple[Path, str, str, list]]:
-    """Yield (channel_dir, channel_id, channel_name, messages) once per channel."""
-    index = load_index(export_dir)
+    """Yield (channel_dir, channel_id, channel_name, messages) once per channel.
+
+    Skips channels whose messages.json or channel.json cannot be parsed.
+    """
+    try:
+        index = load_index(export_dir)
+    except (OSError, ValueError):
+        index = {}
     for channel_dir in iter_message_channels(export_dir / "Nachrichten"):
         channel_id = dirname_to_channel_id(channel_dir.name)
         channel_name = index.get(channel_id, "Unknown")
-        yield channel_dir, channel_id, channel_name, load_messages(channel_dir)
+        try:
+            messages = load_messages(channel_dir)
+        except (OSError, ValueError):
+            continue
+        yield channel_dir, channel_id, channel_name, messages
 
 
 def _server_name(channel_dir: Path, channel_name: str) -> str:

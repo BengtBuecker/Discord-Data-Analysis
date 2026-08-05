@@ -27,8 +27,11 @@ from analyzers.voice import voice_summary
 from utils.formatting import format_hours_minutes
 
 
+_SEPARATOR_WIDTH = 60
+
+
 def _render_ranked_table(title, col_name, rows, name_width,
-                         width=60, top=None, more_noun=None):
+                         width=_SEPARATOR_WIDTH, top=None, more_noun=None):
     """Print a ranked name/count table with percentage column."""
     total = sum(c for _, c in rows)
     print(f"\n{'=' * width}")
@@ -47,9 +50,9 @@ def _render_ranked_table(title, col_name, rows, name_width,
 
 
 def _render_timeline(timeline, granularity="month"):
-    print(f"\n{'=' * 50}")
+    print(f"\n{'=' * _SEPARATOR_WIDTH}")
     print(f"  Message Timeline (by {granularity})")
-    print(f"{'=' * 50}")
+    print(f"{'=' * _SEPARATOR_WIDTH}")
     max_count = max(timeline.values()) if timeline else 1
     for period, count in timeline.items():
         bar = "#" * min(int(count / max_count * 30), 30)
@@ -67,9 +70,9 @@ def _render_duration_section(title, entries, name_width, unit):
 
 
 def _render_voice(summary):
-    print(f"\n{'=' * 60}")
+    print(f"\n{'=' * _SEPARATOR_WIDTH}")
     print("  Voice Call Analysis")
-    print(f"{'=' * 60}")
+    print(f"{'=' * _SEPARATOR_WIDTH}")
     print(f"  Total sessions:       {summary['total_sessions']}")
     print(f"  Total voice time:     {summary['total_duration_formatted']} ({summary['total_duration_seconds']}s)")
     print(f"  Average session:      {summary['average_duration_seconds'] // 60}m {summary['average_duration_seconds'] % 60}s")
@@ -133,9 +136,9 @@ def print_voice(export_dir: Path):
 def print_all(export_dir: Path):
     """Print the full report: messages, servers, channels, timeline, voice."""
     s = full_summary(export_dir)
-    print(f"\n{'=' * 60}")
+    print(f"\n{'=' * _SEPARATOR_WIDTH}")
     print("  FULL DISCORD DATA ANALYSIS")
-    print(f"{'=' * 60}")
+    print(f"{'=' * _SEPARATOR_WIDTH}")
     print(f"  Total messages sent:  {s['total_messages']}")
     print(f"    - DM messages:       {s['dm_total']}")
     print(f"    - Server messages:   {s['server_total']}")

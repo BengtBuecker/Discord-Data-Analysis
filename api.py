@@ -1,6 +1,5 @@
 """Python-JS bridge for pywebview Discord Analyzer."""
 
-import json
 import sys
 import tempfile
 import zipfile
