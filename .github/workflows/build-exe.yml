@@ -47,3 +47,4 @@ jobs:
         with:
           files: dist/Discord-Data-Analyzer.exe
           generate_release_notes: true
+          prerelease: ${{ contains(github.ref, '-pre') || contains(github.ref, '-rc') || contains(github.ref, '-alpha') || contains(github.ref, '-beta') }}

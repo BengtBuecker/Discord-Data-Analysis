@@ -13,6 +13,7 @@ let state = {
   dmSort: { key: "count", asc: false },
   serverSort: { key: "count", asc: false },
   sections: { dm: true, servers: true, voice: true, timeline: true },
+  monthDrilldown: null,
 };
 
 // ── API Bridge ──
@@ -139,16 +140,30 @@ function renderDashboard() {
   EL("dashboard").style.display = "flex";
 
   renderSummary(d);
-  renderDMSection(d);
-  renderServersSection(d);
-  renderVoiceSection(d);
-  renderTimeline(d);
+
+  if (state.monthDrilldown) {
+    EL("dmSection").style.display = "none";
+    EL("serversSection").style.display = "none";
+    EL("voiceSection").style.display = "none";
+    renderTimeline(d);
+    renderMonthDrilldown(state.monthDrilldown);
+  } else {
+    EL("dmSection").style.display = "";
+    EL("serversSection").style.display = "";
+    EL("voiceSection").style.display = "";
+    EL("drilldownSection").style.display = "none";
+    renderDMSection(d);
+    renderServersSection(d);
+    renderVoiceSection(d);
+    renderTimeline(d);
+  }
 
   EL("newAnalysisBtn").onclick = () => {
     EL("dashboard").style.display = "none";
     EL("landing").style.display = "flex";
     EL("statusMsg").style.display = "none";
     state.data = null;
+    state.monthDrilldown = null;
   };
 }
 
@@ -308,7 +323,8 @@ function renderTimeline(d) {
     const [period, count] = entry;
     const h = (count / maxCount * 100).toFixed(1);
     const color = BAR_COLORS[i % BAR_COLORS.length];
-    return `<div class="timeline-bar" style="height:${h}%;background:${color};" data-tip="${period}: ${nf(count)} messages"></div>`;
+    const active = state.monthDrilldown === period ? " active" : "";
+    return `<div class="timeline-bar${active}" style="height:${h}%;background:${color};" data-month="${period}" data-tip="${period}: ${nf(count)} messages" tabindex="0"></div>`;
   }).join("");
 
   months.forEach((entry, i) => {
@@ -330,7 +346,113 @@ function renderTimeline(d) {
   EL("timelineSection").innerHTML = sectionTemplate("timeline", "Message Timeline",
     `${entries.length} months`, false, body);
   bindSectionEvents("timeline");
-  bindTimelineHover();
+  bindTimelineEvents();
+}
+
+// ── Month Drill‑down ──
+
+function renderMonthDrilldown(month) {
+  const pm = state.data.per_month;
+  const data = pm[month];
+  const section = EL("drilldownSection");
+  const title = EL("drilldownTitle");
+
+  if (!data) {
+    section.style.display = "none";
+    state.monthDrilldown = null;
+    return;
+  }
+
+  section.style.display = "";
+  title.textContent = formatMonthLabel(month) + " — " + nf(data.total) + " messages";
+
+  // ── Day chart: vertical bars for each day of the month ──
+  const days = data.days || {};
+  const dayEntries = Object.entries(days);
+  const maxDay = dayEntries.length ? Math.max(...dayEntries.map(e => e[1])) : 1;
+  const dn = dayEntries.length;
+
+  let dayChartHtml = "";
+  if (dayEntries.length) {
+    const DAY_LEFT = 36;
+    const DAY_RIGHT = 20;
+
+    let dayGrid = `<div class="timeline-grid-line" style="top:25%"></div>`;
+    dayGrid += `<div class="timeline-grid-line" style="top:50%"></div>`;
+    dayGrid += `<div class="timeline-grid-line" style="top:75%"></div>`;
+
+    const dayBars = dayEntries.map((entry, i) => {
+      const [date, count] = entry;
+      const h = (count / maxDay * 100).toFixed(1);
+      const color = BAR_COLORS[i % BAR_COLORS.length];
+      const dayNum = date.length >= 10 ? date.slice(8, 10) : date;
+      const label = parseInt(dayNum, 10) + suffix(parseInt(dayNum, 10));
+      return `<div class="timeline-bar" style="height:${h}%;background:${color};" data-tip="${label}: ${nf(count)} msgs"></div>`;
+    }).join("");
+
+    let dayLabels = "";
+    dayEntries.forEach((entry, i) => {
+      const step = dn <= 15 ? 2 : dn <= 25 ? 3 : 4;
+      if (i % step === 0 || i === dn - 1) {
+        const date = entry[0];
+        const dayNum = date.length >= 10 ? parseInt(date.slice(8, 10), 10) : i + 1;
+        dayLabels += `<div class="timeline-label" style="left:calc(${DAY_LEFT}px + ${(i + 0.5)} * (100% - ${DAY_LEFT + DAY_RIGHT}px) / ${dn});">${dayNum}</div>`;
+      }
+    });
+
+    dayChartHtml = `
+      <div class="section" style="margin-bottom:var(--sp-lg);">
+        <div class="section-header" style="border-bottom:none;margin-bottom:0;padding-bottom:4px;cursor:default;">
+          <span class="section-title">Daily Breakdown</span>
+          <span class="section-subtitle">${dayEntries.length} days</span>
+        </div>
+        <div class="timeline-chart" style="margin-top:0;">
+          ${dayGrid}
+          <div class="timeline-bars">${dayBars}</div>
+          ${dayLabels}
+          <div class="timeline-max-label">${nf(maxDay)}</div>
+        </div>
+      </div>
+    `;
+  }
+
+  EL("drilldownDayChart").innerHTML = dayChartHtml;
+  bindDayChartHover();
+
+  const dmUsers = data.dm_users || [];
+  const servers = data.servers || [];
+  const maxDM = dmUsers.length ? dmUsers[0][1] : 1;
+  const maxSV = servers.length ? servers[0][1] : 1;
+
+  let dmBody = dmUsers.slice(0, 12).map((u, i) =>
+    barRow(i + 1, u[0], u[1], maxDM, i, "msgs")
+  ).join("");
+  if (!dmBody) dmBody = `<div class="empty-state">No DMs this month</div>`;
+
+  let svBody = servers.slice(0, 10).map((s, i) =>
+    barRow(0, s[0], s[1], maxSV, i, "msgs")
+  ).join("");
+  if (!svBody) svBody = `<div class="empty-state">No server messages this month</div>`;
+
+  EL("drilldownDM").innerHTML = sectionTemplate("drilldown-dm", "DM Contacts",
+    `${dmUsers.length} users`, false, dmBody);
+  EL("drilldownServers").innerHTML = sectionTemplate("drilldown-sv", "Servers",
+    `${servers.length} servers`, false, svBody);
+
+  bindSectionEvents("drilldown-dm");
+  bindSectionEvents("drilldown-sv");
+}
+
+function goBackToOverview() {
+  state.monthDrilldown = null;
+  renderDashboard();
+}
+
+function formatMonthLabel(ym) {
+  const months = ["Jan","Feb","Mar","Apr","May","Jun",
+                  "Jul","Aug","Sep","Oct","Nov","Dec"];
+  const [y, m] = ym.split("-");
+  return months[parseInt(m, 10) - 1] + " " + y;
 }
 
 // ── Event Binding ──
@@ -339,6 +461,9 @@ function bindSectionEvents(sectionId) {
   const el = sectionId === "dm" ? EL("dmSection")
     : sectionId === "servers" ? EL("serversSection")
     : sectionId === "voice" ? EL("voiceSection")
+    : sectionId === "drilldown-dm" ? EL("drilldownDM")
+    : sectionId === "drilldown-sv" ? EL("drilldownServers")
+    : sectionId === "drilldown-days" ? EL("drilldownDayChart")
     : EL("timelineSection");
 
   // Collapse toggle
@@ -385,8 +510,9 @@ function bindVoiceChips() {
   });
 }
 
-function bindTimelineHover() {
-  const section = EL("timelineSection");
+function bindDayChartHover() {
+  const section = EL("drilldownDayChart");
+  if (!section) return;
   const bars = section.querySelectorAll(".timeline-bar");
   const tip = EL("tooltip");
   bars.forEach(bar => {
@@ -404,11 +530,56 @@ function bindTimelineHover() {
   });
 }
 
+function bindTimelineEvents() {
+  const section = EL("timelineSection");
+  const bars = section.querySelectorAll(".timeline-bar");
+  const tip = EL("tooltip");
+
+  bars.forEach(bar => {
+    bar.addEventListener("mouseenter", () => {
+      tip.textContent = bar.dataset.tip;
+      tip.classList.add("visible");
+    });
+    bar.addEventListener("mousemove", (e) => {
+      tip.style.left = (e.clientX + 12) + "px";
+      tip.style.top = (e.clientY - 28) + "px";
+    });
+    bar.addEventListener("mouseleave", () => {
+      tip.classList.remove("visible");
+    });
+    bar.addEventListener("click", () => {
+      const month = bar.dataset.month;
+      if (month) {
+        state.monthDrilldown = state.monthDrilldown === month ? null : month;
+        renderDashboard();
+      }
+    });
+    bar.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        const month = bar.dataset.month;
+        if (month) {
+          state.monthDrilldown = state.monthDrilldown === month ? null : month;
+          renderDashboard();
+        }
+      }
+    });
+  });
+
+  const backBtn = EL("drilldownBackBtn");
+  if (backBtn) {
+    backBtn.onclick = goBackToOverview;
+  }
+}
+
 function toggleSection(id) {
   state.sections[id] = state.sections[id] === false ? true : false;
   const el = id === "dm" ? EL("dmSection")
     : id === "servers" ? EL("serversSection")
     : id === "voice" ? EL("voiceSection")
+    : id === "drilldown-dm" ? EL("drilldownDM")
+    : id === "drilldown-sv" ? EL("drilldownServers")
+    : id === "drilldown-days" ? EL("drilldownDayChart")
     : EL("timelineSection");
 
   const header = el.querySelector(".section-header");
@@ -462,6 +633,14 @@ function hideTooltip() {
 
 function nf(n) { return n?.toLocaleString() ?? "0"; }
 function esc(s) { return String(s).replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+function suffix(d) {
+  if (d >= 11 && d <= 13) return "th";
+  const last = d % 10;
+  if (last === 1) return "st";
+  if (last === 2) return "nd";
+  if (last === 3) return "rd";
+  return "th";
+}
 function formatHMS(sec) {
   const h = Math.floor(sec / 3600);
   const m = Math.floor((sec % 3600) / 60);

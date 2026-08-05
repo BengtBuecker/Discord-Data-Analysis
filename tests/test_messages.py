@@ -168,7 +168,7 @@ class TestFullSummary:
     def test_returns_all_keys(self, mock_export_dir):
         s = full_summary(mock_export_dir)
         expected = {"total_messages", "dm_total", "server_total", "dm_users",
-                     "servers", "channels", "timeline"}
+                     "servers", "channels", "timeline", "per_month"}
         assert set(s.keys()) == expected
 
     def test_total_counts(self, mock_export_dir):

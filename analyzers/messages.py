@@ -115,7 +115,11 @@ def message_timeline(export_dir: Path, granularity: str = "month") -> Dict[str, 
 
 
 def full_summary(export_dir: Path, granularity: str = "month") -> dict:
-    """All message stats in a single pass over the export."""
+    """All message stats in a single pass over the export.
+
+    Also returns a ``per_month`` breakdown so the frontend can drill down
+    into a single month and show per-contact / per-server stats for it.
+    """
     fmt = _granularity_format(granularity)
 
     user_counts: Dict[str, int] = defaultdict(int)
@@ -123,25 +127,53 @@ def full_summary(export_dir: Path, granularity: str = "month") -> dict:
     channels: List[Tuple[str, str, int]] = []
     timeline: Dict[str, int] = defaultdict(int)
 
+    # ── per-month breakdown: { month: { "dm_users": {user: count}, "servers": {server: count} } }
+    per_month_dm: Dict[str, Dict[str, int]] = defaultdict(lambda: defaultdict(int))
+    per_month_server: Dict[str, Dict[str, int]] = defaultdict(lambda: defaultdict(int))
+    per_month_days: Dict[str, Dict[str, int]] = defaultdict(lambda: defaultdict(int))
+    day_fmt = "%Y-%m-%d"
+
     for channel_dir, channel_id, name, messages in _channel_entries(export_dir):
         count = len(messages)
         channels.append((channel_id, name, count))
 
         username = extract_dm_username(name)
-        if username is not None:
+        is_dm = username is not None
+        if is_dm:
             user_counts[username] += count
         else:
-            server_counts[_server_name(channel_dir, name)] += count
+            server_name = _server_name(channel_dir, name)
+            server_counts[server_name] += count
 
         for msg in messages:
             key = _timeline_key(msg.get("Timestamp", ""), fmt)
             if key:
                 timeline[key] += 1
+                if is_dm:
+                    per_month_dm[key][username] += 1
+                else:
+                    per_month_server[key][server_name] += 1
+                day_key = _timeline_key(msg.get("Timestamp", ""), day_fmt)
+                if day_key:
+                    per_month_days[key][day_key] += 1
 
     dm_users = sorted(user_counts.items(), key=lambda x: x[1], reverse=True)
     servers = sorted(server_counts.items(), key=lambda x: x[1], reverse=True)
     dm_total = sum(user_counts.values())
     server_total = sum(server_counts.values())
+
+    # Post-process per_month: convert inner dicts to sorted lists
+    per_month: Dict[str, dict] = {}
+    all_months = set(per_month_dm.keys()) | set(per_month_server.keys())
+    for month in sorted(all_months):
+        dm_sorted = sorted(per_month_dm[month].items(), key=lambda x: x[1], reverse=True)
+        sv_sorted = sorted(per_month_server[month].items(), key=lambda x: x[1], reverse=True)
+        per_month[month] = {
+            "dm_users": dm_sorted,
+            "servers": sv_sorted,
+            "total": sum(v for _, v in dm_sorted) + sum(v for _, v in sv_sorted),
+            "days": dict(sorted(per_month_days.get(month, {}).items())),
+        }
 
     return {
         "total_messages": dm_total + server_total,
@@ -151,6 +183,7 @@ def full_summary(export_dir: Path, granularity: str = "month") -> dict:
         "servers": servers,
         "channels": sorted(channels, key=lambda x: x[2], reverse=True),
         "timeline": dict(sorted(timeline.items())),
+        "per_month": per_month,
     }
 
 
