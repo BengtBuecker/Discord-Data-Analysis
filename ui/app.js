@@ -120,15 +120,47 @@ async function analyzeFile(path) {
 }
 
 // ── Loading ──
+const PHASE_IDS = {
+  "Extracting ZIP...": "phase-extract",
+  "Analyzing messages...": "phase-messages",
+  "Analyzing voice...": "phase-voice",
+  "Building dashboard...": "phase-dashboard",
+};
+
+function updateProgress(phase) {
+  const targetId = PHASE_IDS[phase];
+  if (!targetId) return;
+  let found = false;
+  const items = document.querySelectorAll(".progress-item");
+  for (const item of items) {
+    if (item.id === targetId) {
+      item.className = "progress-item active";
+      found = true;
+    } else if (!found) {
+      item.className = "progress-item complete";
+    } else {
+      item.className = "progress-item";
+    }
+  }
+}
 
 function showLoading(text) {
   const ov = EL("loading");
   ov.classList.remove("hidden");
-  EL("loadingText").textContent = text || "Analyzing...";
+  const items = document.querySelectorAll(".progress-item");
+  for (const item of items) {
+    item.className = "progress-item";
+  }
 }
 
 function hideLoading() {
-  EL("loading").classList.add("hidden");
+  const items = document.querySelectorAll(".progress-item");
+  for (const item of items) {
+    item.className = "progress-item complete";
+  }
+  setTimeout(() => {
+    EL("loading").classList.add("hidden");
+  }, 300);
 }
 
 // ── Dashboard ──

@@ -297,6 +297,56 @@ body {
   to { transform: rotate(360deg); }
 }
 
+.progress-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-md);
+  text-align: left;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.progress-item {
+  color: var(--clr-dim);
+  font-size: var(--fs-sm);
+  padding-left: 28px;
+  position: relative;
+  transition: color var(--tr-normal);
+}
+.progress-item::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 14px;
+  height: 14px;
+  border-radius: var(--rd-pill);
+  border: 2px solid var(--clr-dim);
+  background: transparent;
+  transition: background var(--tr-normal), border-color var(--tr-normal);
+}
+.progress-item.active {
+  color: var(--clr-text);
+}
+.progress-item.active::before {
+  background: var(--clr-accent);
+  border-color: var(--clr-accent);
+}
+.progress-item.complete {
+  color: var(--clr-success);
+}
+.progress-item.complete::before {
+  background: var(--clr-success);
+  border-color: var(--clr-success);
+  content: "✓";
+  color: #fff;
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-bold);
+  line-height: 14px;
+  text-align: center;
+}
+
 .skeleton-grid {
   display: grid;
   grid-template-columns: repeat(5, 1fr);

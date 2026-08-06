@@ -26,8 +26,12 @@
 
 <!-- ═══════════════ Loading Overlay ═══════════════ -->
 <div id="loading" class="loading-overlay hidden">
-  <div class="spinner"></div>
-  <p id="loadingText" style="color:var(--color-dim);font-size:var(--fs-sm);">Analyzing...</p>
+  <ul id="progressList" class="progress-list">
+    <li id="phase-extract" class="progress-item">Extracting ZIP...</li>
+    <li id="phase-messages" class="progress-item">Analyzing messages...</li>
+    <li id="phase-voice" class="progress-item">Analyzing voice...</li>
+    <li id="phase-dashboard" class="progress-item">Building dashboard...</li>
+  </ul>
 </div>
 
 <!-- ═══════════════ Dashboard ═══════════════ -->
