@@ -99,6 +99,23 @@ function setupLanding() {
       }
     } catch (_) { /* silent - bridge not ready at page load is OK */ }
   })();
+
+  EL("importBtn").addEventListener("click", async () => {
+    try {
+      const api = await getPywebviewApi();
+      const data = await api.importAnalysis();
+      if (data) {
+        state.data = data;
+        EL("landing").style.display = "none";
+        renderDashboard();
+        try { await api.saveAnalysis(state.data); } catch (_) {}
+      } else {
+        showToast("Invalid analysis file.");
+      }
+    } catch (e) {
+      showToast("Import failed: " + (e.message || e));
+    }
+  });
 }
 
 async function doSelectFile() {
@@ -182,6 +199,16 @@ function hideLoading() {
   }, 300);
 }
 
+// ── Toast ──
+
+function showToast(msg) {
+  const el = EL("statusMsg");
+  el.textContent = msg;
+  el.style.display = "block";
+  el.style.color = "var(--clr-dim)";
+  setTimeout(() => { el.style.display = "none"; }, 2000);
+}
+
 // ── Dashboard ──
 
 function renderDashboard() {
@@ -208,6 +235,16 @@ function renderDashboard() {
     renderVoiceSection(d);
     renderTimeline(d);
   }
+
+  EL("exportBtn").onclick = async () => {
+    try {
+      const api = await getPywebviewApi();
+      const path = await api.exportAnalysis(state.data);
+      if (path) showToast("Exported to " + path);
+    } catch (e) {
+      showToast("Export failed: " + (e.message || e));
+    }
+  };
 
   EL("newAnalysisBtn").onclick = () => {
     EL("dashboard").style.display = "none";
