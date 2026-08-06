@@ -81,6 +81,24 @@ function setupLanding() {
       analyzeFile(decodeURIComponent(window.location.pathname.replace(/^\//, "")));
     }
   });
+
+  // Check for saved analysis
+  (async () => {
+    try {
+      const api = await getPywebviewApi();
+      const saved = await api.getSavedAnalysis();
+      if (saved) {
+        const btn = EL("continueBtn");
+        btn.style.display = "block";
+        btn.addEventListener("click", async () => {
+          state.data = saved;
+          EL("landing").style.display = "none";
+          renderDashboard();
+          try { await api.saveAnalysis(state.data); } catch (_) {}
+        });
+      }
+    } catch (_) { /* silent - bridge not ready at page load is OK */ }
+  })();
 }
 
 async function doSelectFile() {
@@ -111,6 +129,7 @@ async function analyzeFile(path) {
     state.data = data;
     hideLoading();
     renderDashboard();
+    try { await api.saveAnalysis(state.data); } catch (_) { /* silent */ }
   } catch (err) {
     hideLoading();
     EL("landing").style.display = "flex";
