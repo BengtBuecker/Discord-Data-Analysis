@@ -135,3 +135,62 @@ class AnalyzerApi:
         except (json.JSONDecodeError, OSError) as e:
             print(f"[WARN] Corrupted saved analysis: {e}", file=sys.stderr)
             return None
+
+    def exportAnalysis(self, data: dict) -> str:
+        """Save the analysis result to a user-chosen JSON file."""
+        import tkinter as tk
+        from tkinter import filedialog
+
+        try:
+            root = tk.Tk()
+            root.withdraw()
+            root.attributes("-topmost", True)
+            path = filedialog.asksaveasfilename(
+                title="Export Analysis",
+                defaultextension=".json",
+                filetypes=[("JSON files", "*.json")],
+                initialfile="discord-analysis.json",
+            )
+            root.destroy()
+            if not path:
+                return ""
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2)
+            return path
+        except Exception:
+            return ""
+
+    def importAnalysis(self) -> dict | None:
+        """Load a previously exported analysis JSON file, validating its shape."""
+        import tkinter as tk
+        from tkinter import filedialog
+
+        try:
+            root = tk.Tk()
+            root.withdraw()
+            root.attributes("-topmost", True)
+            path = filedialog.askopenfilename(
+                title="Import Analysis",
+                filetypes=[("JSON files", "*.json")],
+            )
+            root.destroy()
+            if not path:
+                return None
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if (
+                not isinstance(data.get("msg"), dict)
+                or not isinstance(data.get("voice"), dict)
+                or not isinstance(data.get("timeline"), dict)
+            ):
+                print(
+                    "[WARN] Imported file is not a valid analysis: missing msg/voice/timeline",
+                    file=sys.stderr,
+                )
+                return None
+            return data
+        except (json.JSONDecodeError, OSError) as e:
+            print(f"[WARN] Failed to import analysis: {e}", file=sys.stderr)
+            return None
+        except Exception:
+            return None
