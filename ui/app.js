@@ -134,27 +134,45 @@ function setupLanding() {
 
 // ── My Analyses Dropdown ──
 
-async function setupMyAnalysesButton(api) {
-  const btn = EL("myAnalysisBtn");
-  const wrap = EL("myAnalysisWrap");
-  if (!btn || !wrap) return;
+async function buildMyAnalysesDropdown(api, wrap, toggleBtn) {
+  let dropdown = wrap.querySelector(".analysis-dropdown");
+  if (dropdown) dropdown.remove();
 
   const analyses = await api.listSavedAnalyses();
-  if (!analyses || !analyses.length) return;
 
-  btn.style.display = "inline-flex";
-
-  const dropdown = document.createElement("div");
+  dropdown = document.createElement("div");
   dropdown.className = "analysis-dropdown";
   dropdown.style.display = "none";
-  dropdown.innerHTML = analyses.map((a) => {
-    const msgs = nf(a.preview?.total_messages ?? 0);
-    const voice = esc(a.preview?.total_voice_time ?? "0h 0m");
-    return `<div class="analysis-dropdown-item" data-filename="${esc(a.filename)}">${esc(a.username)} — ${esc(a.date)} (${msgs} messages, ${voice} voice)</div>`;
-  }).join("");
+
+  if (!analyses || !analyses.length) {
+    dropdown.innerHTML = `<div class="analysis-dropdown-item analysis-dropdown-empty">No saved analyses yet</div>`;
+  } else {
+    dropdown.innerHTML = analyses.map((a) => {
+      return `<div class="analysis-dropdown-item" data-filename="${esc(a.filename)}">${esc(a.username)} — ${esc(formatAnalysisDate(a.date))}</div>`;
+    }).join("");
+
+    dropdown.querySelectorAll(".analysis-dropdown-item").forEach((item) => {
+      item.addEventListener("click", async () => {
+        dropdown.style.display = "none";
+        try {
+          const data = await api.loadAnalysis(item.dataset.filename);
+          if (data) {
+            state.data = data;
+            EL("landing").style.display = "none";
+            renderDashboard();
+          } else {
+            showToast("Could not load that analysis.");
+          }
+        } catch (err) {
+          showToast("Load failed: " + (err.message || err));
+        }
+      });
+    });
+  }
+
   wrap.appendChild(dropdown);
 
-  btn.addEventListener("click", (e) => {
+  toggleBtn.addEventListener("click", (e) => {
     e.stopPropagation();
     dropdown.style.display = dropdown.style.display === "none" ? "block" : "none";
   });
@@ -162,24 +180,22 @@ async function setupMyAnalysesButton(api) {
   document.addEventListener("click", (e) => {
     if (!wrap.contains(e.target)) dropdown.style.display = "none";
   });
+}
 
-  dropdown.querySelectorAll(".analysis-dropdown-item").forEach((item) => {
-    item.addEventListener("click", async () => {
-      dropdown.style.display = "none";
-      try {
-        const data = await api.loadAnalysis(item.dataset.filename);
-        if (data) {
-          state.data = data;
-          EL("landing").style.display = "none";
-          renderDashboard();
-        } else {
-          showToast("Could not load that analysis.");
-        }
-      } catch (err) {
-        showToast("Load failed: " + (err.message || err));
-      }
-    });
-  });
+async function setupMyAnalysesButton(api) {
+  const btn = EL("myAnalysisBtn");
+  const wrap = EL("myAnalysisWrap");
+  if (!btn || !wrap) return;
+  btn.style.display = "inline-flex";
+  buildMyAnalysesDropdown(api, wrap, btn);
+}
+
+async function setupHeaderMyAnalyses(api) {
+  const btn = EL("headerMyAnalysisBtn");
+  const wrap = EL("headerMyAnalysisWrap");
+  if (!btn || !wrap) return;
+  btn.style.display = "inline-flex";
+  buildMyAnalysesDropdown(api, wrap, btn);
 }
 
 async function doSelectFile() {
@@ -296,6 +312,13 @@ function renderDashboard() {
   EL("dashboard").style.display = "flex";
 
   renderSummary(d);
+
+  (async () => {
+    try {
+      const api = await getPywebviewApi();
+      await setupHeaderMyAnalyses(api);
+    } catch (e) { console.warn("Failed to set up header My Analyses:", e); }
+  })();
 
   if (state.monthDrilldown) {
     EL("dmSection").style.display = "none";
@@ -831,6 +854,14 @@ function formatHMS(sec) {
   const h = Math.floor(sec / 3600);
   const m = Math.floor((sec % 3600) / 60);
   return h > 0 ? `${h}h ${m}m` : `${m}m`;
+}
+function formatAnalysisDate(yyyy_mm_dd) {
+  if (!yyyy_mm_dd) return "";
+  const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  const [y, m, d] = yyyy_mm_dd.split("-");
+  if (!y || !m || !d) return yyyy_mm_dd;
+  const day = parseInt(d, 10);
+  return months[parseInt(m, 10) - 1] + " " + day + ", " + y;
 }
 
 // ── Init ──

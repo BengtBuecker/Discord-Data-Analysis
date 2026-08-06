@@ -353,6 +353,15 @@ body {
   background: var(--clr-accent);
   color: #fff;
 }
+.analysis-dropdown-empty {
+  color: var(--clr-dim);
+  cursor: default;
+  pointer-events: none;
+}
+.analysis-dropdown-empty:hover {
+  background: transparent;
+  color: var(--clr-dim);
+}
 
 /* ── Update Banner ─────────────────────────────────────────────────────── */
 
