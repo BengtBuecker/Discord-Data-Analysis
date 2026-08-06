@@ -1,5 +1,7 @@
 """Python-JS bridge for pywebview Discord Analyzer."""
 
+import json
+import os
 import sys
 import tempfile
 import zipfile
@@ -37,6 +39,21 @@ class AnalyzerApi:
         except Exception:
             return ""
 
+    def _push_progress(self, phase: str) -> None:
+        """Push a progress update to the JS frontend. No-op if webview
+        is unavailable or no window is open (e.g. under pytest)."""
+        try:
+            import webview
+            _has_webview = True
+        except ImportError:
+            _has_webview = False
+
+        if not _has_webview:
+            return
+        if not webview.windows:
+            return
+        webview.windows[0].evaluate_js(f"updateProgress('{phase}')")
+
     def analyzeZip(self, zip_path: str) -> dict:
         path = Path(zip_path)
         if path.suffix.lower() != ".zip" or not path.exists():
@@ -44,6 +61,7 @@ class AnalyzerApi:
 
         extract_dir = Path(tempfile.mkdtemp(prefix="discord_export_"))
         try:
+            self._push_progress("Extracting ZIP...")
             with zipfile.ZipFile(path, "r") as zf:
                 zf.extractall(extract_dir)
         except (zipfile.BadZipFile, OSError) as e:
@@ -52,7 +70,9 @@ class AnalyzerApi:
 
         export_dir = self._find_export_root(extract_dir)
         try:
+            self._push_progress("Analyzing messages...")
             msg = full_summary(export_dir)
+            self._push_progress("Analyzing voice...")
             voice = voice_summary(export_dir)
         except Exception as e:
             shutil.rmtree(extract_dir, ignore_errors=True)
@@ -60,6 +80,7 @@ class AnalyzerApi:
 
         shutil.rmtree(extract_dir, ignore_errors=True)
 
+        self._push_progress("Building dashboard...")
         return {
             "msg": {
                 "total_messages": msg["total_messages"],
@@ -85,3 +106,32 @@ class AnalyzerApi:
             if child.is_dir() and (child / "Account").exists():
                 return child
         return extract_dir
+
+    def saveAnalysis(self, data: dict) -> bool:
+        """Persist the last analysis result for auto-restore on next launch."""
+        appdata = os.getenv("APPDATA")
+        if not appdata:
+            return False
+        save_dir = Path(appdata) / "Discord-Personal-Data-Analyzer"
+        try:
+            save_dir.mkdir(parents=True, exist_ok=True)
+            with open(save_dir / "last-analysis.json", "w", encoding="utf-8") as f:
+                json.dump(data, f)
+            return True
+        except OSError:
+            return False
+
+    def getSavedAnalysis(self) -> dict | None:
+        """Load the last persisted analysis, if any."""
+        appdata = os.getenv("APPDATA")
+        if not appdata:
+            return None
+        save_path = Path(appdata) / "Discord-Personal-Data-Analyzer" / "last-analysis.json"
+        if not save_path.exists():
+            return None
+        try:
+            with open(save_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except (json.JSONDecodeError, OSError) as e:
+            print(f"[WARN] Corrupted saved analysis: {e}", file=sys.stderr)
+            return None
