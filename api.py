@@ -2,8 +2,10 @@
 
 import json
 import os
+import re
 import sys
 import tempfile
+import urllib.request
 import zipfile
 import shutil
 from pathlib import Path
@@ -13,6 +15,10 @@ sys.path.insert(0, str(ANALYZER_DIR))
 
 from analyzers.messages import full_summary
 from analyzers.voice import voice_summary
+
+VERSION = "2.1.0"
+
+_RELEASES_URL = "https://api.github.com/repos/BengtBuecker/Discord-Personal-Data-Analysis/releases/latest"
 
 
 class AnalyzerApi:
@@ -194,3 +200,46 @@ class AnalyzerApi:
             return None
         except Exception:
             return None
+
+    def checkForUpdate(self) -> None:
+        """Check GitHub Releases for a newer version and notify the UI.
+
+        Runs on a background thread (see main.py). Any failure — network,
+        rate limiting, malformed response — is swallowed silently.
+        """
+        import ssl
+
+        try:
+            ctx = ssl.create_default_context()
+            req = urllib.request.Request(
+                _RELEASES_URL,
+                headers={
+                    "Accept": "application/vnd.github+json",
+                    "User-Agent": "Discord-Personal-Data-Analyzer",
+                },
+            )
+            with urllib.request.urlopen(req, context=ctx, timeout=10) as resp:
+                release = json.loads(resp.read().decode())
+
+            tag = release.get("tag_name", "")
+            match = re.match(r"^v?(\d+)\.(\d+)\.(\d+)", tag)
+            if not match:
+                return  # non-semver tag, skip silently
+
+            remote_version = tuple(int(g) for g in match.groups())
+            local_version = tuple(int(x) for x in VERSION.split("."))
+
+            if remote_version > local_version:
+                html_url = release.get("html_url", "")
+                self._push_progress("")  # verify webview is available
+                try:
+                    import webview
+
+                    if webview.windows:
+                        webview.windows[0].evaluate_js(
+                            f"showUpdateBanner('{tag}', '{html_url}')"
+                        )
+                except (ImportError, IndexError, AttributeError):
+                    pass
+        except Exception:
+            pass  # network errors, rate limiting, etc. -- all silent

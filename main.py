@@ -6,6 +6,7 @@ Supports both dev (python main.py) and PyInstaller-frozen (.exe) modes.
 """
 
 import sys
+import threading
 from pathlib import Path
 
 if getattr(sys, "frozen", False):
@@ -36,6 +37,7 @@ def run_webview():
         min_size=(640, 500),
         resizable=True,
     )
+    threading.Thread(target=api.checkForUpdate, daemon=True).start()
     webview.start(debug=False, private_mode=False)
 
 
