@@ -38,11 +38,16 @@
 
 <!-- ═══════════════ Dashboard ═══════════════ -->
 <div id="dashboard" class="dashboard" style="display:none;">
+  <div id="updateBanner" class="update-banner" style="display:none;">
+    <span id="updateBannerText"></span>
+    <button id="updateBannerDismiss" class="update-banner-dismiss">&times;</button>
+  </div>
   <header class="dashboard-header">
     <div class="dashboard-header-left">
       <span class="logo-icon"><img src="Logo.png" alt="Logo"></span>
       <h1>Dashboard</h1>
     </div>
+    <button id="checkUpdatesBtn" class="btn btn-secondary btn-sm">Check for Updates</button>
     <button id="exportBtn" class="btn btn-secondary btn-sm">Export as JSON</button>
     <button id="newAnalysisBtn" class="btn btn-secondary btn-sm">New Analysis</button>
   </header>

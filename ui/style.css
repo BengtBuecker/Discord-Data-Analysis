@@ -264,6 +264,34 @@ body {
   font-size: var(--fs-sm);
 }
 
+/* ── Update Banner ─────────────────────────────────────────────────────── */
+
+.update-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--sp-sm) var(--sp-md);
+  background: var(--clr-accent);
+  color: #fff;
+  font-size: var(--fs-sm);
+  position: sticky;
+  top: 0;
+  z-index: 75;
+}
+.update-banner a {
+  color: #fff;
+  font-weight: bold;
+  text-decoration: underline;
+}
+.update-banner-dismiss {
+  background: none;
+  border: none;
+  color: #fff;
+  font-size: 1.2em;
+  cursor: pointer;
+  padding: 0 0 0 var(--sp-md);
+}
+
 /* ── Loading ───────────────────────────────────────────────────────────── */
 
 .loading-overlay {

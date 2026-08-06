@@ -209,6 +209,15 @@ function showToast(msg) {
   setTimeout(() => { el.style.display = "none"; }, 2000);
 }
 
+function showUpdateBanner(version, url) {
+  const banner = EL("updateBanner");
+  EL("updateBannerText").innerHTML = "v" + version + " available — <a href=\"" + url + "\" target=\"_blank\">Download</a>";
+  banner.style.display = "flex";
+  EL("updateBannerDismiss").onclick = function() {
+    banner.style.display = "none";
+  };
+}
+
 // ── Dashboard ──
 
 function renderDashboard() {
@@ -245,6 +254,26 @@ function renderDashboard() {
       showToast("Export failed: " + (e.message || e));
     }
   };
+
+  (function() {
+    let lastCheck = 0;
+    EL("checkUpdatesBtn").onclick = async () => {
+      const now = Date.now();
+      if (now - lastCheck < 2000) return;
+      lastCheck = now;
+      try {
+        const api = await getPywebviewApi();
+        await api.checkForUpdate();
+        setTimeout(() => {
+          if (EL("updateBanner").style.display === "none") {
+            showToast("You're up to date!");
+          }
+        }, 1000);
+      } catch (_) {
+        showToast("Update check failed.");
+      }
+    };
+  })();
 
   EL("newAnalysisBtn").onclick = () => {
     EL("dashboard").style.display = "none";
