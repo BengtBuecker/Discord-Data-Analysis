@@ -172,14 +172,23 @@ async function buildMyAnalysesDropdown(api, wrap, toggleBtn) {
 
   wrap.appendChild(dropdown);
 
-  toggleBtn.addEventListener("click", (e) => {
-    e.stopPropagation();
-    dropdown.style.display = dropdown.style.display === "none" ? "block" : "none";
-  });
+  // Only wire the toggle + document-close listeners ONCE per wrap element.
+  if (!wrap.dataset.wired) {
+    wrap.dataset.wired = "1";
 
-  document.addEventListener("click", (e) => {
-    if (!wrap.contains(e.target)) dropdown.style.display = "none";
-  });
+    toggleBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const dd = wrap.querySelector(".analysis-dropdown");
+      if (dd) dd.style.display = dd.style.display === "none" ? "block" : "none";
+    });
+
+    document.addEventListener("click", (e) => {
+      if (!wrap.contains(e.target)) {
+        const dd = wrap.querySelector(".analysis-dropdown");
+        if (dd) dd.style.display = "none";
+      }
+    });
+  }
 }
 
 async function setupMyAnalysesButton(api) {

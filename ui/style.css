@@ -228,10 +228,6 @@ body {
   width: 100%;
 }
 
-.landing-btn-row .btn:focus-visible {
-  box-shadow: 0 0 0 2px var(--clr-accent), 0 0 0 4px var(--clr-bg);
-}
-
 .landing-divider {
   display: flex;
   align-items: center;
