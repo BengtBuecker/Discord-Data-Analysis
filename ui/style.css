@@ -264,6 +264,48 @@ body {
   font-size: var(--fs-sm);
 }
 
+/* ── Update Icon ───────────────────────────────────────────────────────── */
+
+.update-icon {
+  cursor: pointer;
+  font-size: var(--fs-md, var(--fs-body));
+  color: var(--clr-dim);
+  padding: 0 var(--sp-sm);
+  transition: color var(--tr-normal);
+  user-select: none;
+}
+.update-icon:hover { color: var(--clr-text); }
+.update-icon.has-update { color: var(--clr-success); }
+
+/* ── My Analyses Dropdown ──────────────────────────────────────────────── */
+
+.analysis-dropdown {
+  position: absolute;
+  left: 0;
+  top: 100%;
+  background: var(--clr-surface);
+  border: 1px solid var(--clr-overlay);
+  border-radius: var(--rd-md);
+  padding: var(--sp-sm);
+  margin-top: var(--sp-xs);
+  max-height: 200px;
+  overflow-y: auto;
+  z-index: 50;
+  min-width: 280px;
+  box-shadow: var(--shadow-elevated);
+}
+.analysis-dropdown-item {
+  padding: var(--sp-xs) var(--sp-sm);
+  cursor: pointer;
+  border-radius: var(--rd-sm);
+  font-size: var(--fs-sm);
+  color: var(--clr-text);
+}
+.analysis-dropdown-item:hover {
+  background: var(--clr-accent);
+  color: #fff;
+}
+
 /* ── Update Banner ─────────────────────────────────────────────────────── */
 
 .update-banner {
@@ -424,6 +466,12 @@ body {
   display: flex;
   align-items: center;
   gap: var(--sp-md);
+}
+
+.dashboard-header-right {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-sm);
 }
 
 .dashboard-header .logo-icon {

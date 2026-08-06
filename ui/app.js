@@ -14,6 +14,7 @@ let state = {
   serverSort: { key: "count", asc: false },
   sections: { dm: true, servers: true, voice: true, timeline: true },
   monthDrilldown: null,
+  updateAvailable: false,
 };
 
 // ── API Bridge ──
@@ -82,10 +83,19 @@ function setupLanding() {
     }
   });
 
-  // Check for saved analysis
-  (async () => {
+  // Check for saved analysis + past analyses once the pywebview bridge is
+  // actually ready (this used to run immediately at page load, before the
+  // bridge existed, so it always silently failed).
+  window.addEventListener("pywebviewready", async () => {
+    let api;
     try {
-      const api = await getPywebviewApi();
+      api = await getPywebviewApi();
+    } catch (e) {
+      console.warn("Bridge not available:", e);
+      return;
+    }
+
+    try {
       const saved = await api.getSavedAnalysis();
       if (saved) {
         const btn = EL("continueBtn");
@@ -97,8 +107,12 @@ function setupLanding() {
           try { await api.saveAnalysis(state.data); } catch (e) { console.warn("Failed to save analysis:", e); }
         });
       }
-    } catch (_) { /* silent - bridge not ready at page load is OK */ }
-  })();
+    } catch (e) { console.warn("Failed to check saved analysis:", e); }
+
+    try {
+      await setupMyAnalysesButton(api);
+    } catch (e) { console.warn("Failed to set up My Analyses:", e); }
+  }, { once: true });
 
   EL("importBtn").addEventListener("click", async () => {
     try {
@@ -115,6 +129,56 @@ function setupLanding() {
     } catch (e) {
       showToast("Import failed: " + (e.message || e));
     }
+  });
+}
+
+// ── My Analyses Dropdown ──
+
+async function setupMyAnalysesButton(api) {
+  const btn = EL("myAnalysisBtn");
+  const wrap = EL("myAnalysisWrap");
+  if (!btn || !wrap) return;
+
+  const analyses = await api.listSavedAnalyses();
+  if (!analyses || !analyses.length) return;
+
+  btn.style.display = "inline-flex";
+
+  const dropdown = document.createElement("div");
+  dropdown.className = "analysis-dropdown";
+  dropdown.style.display = "none";
+  dropdown.innerHTML = analyses.map((a) => {
+    const msgs = nf(a.preview?.total_messages ?? 0);
+    const voice = esc(a.preview?.total_voice_time ?? "0h 0m");
+    return `<div class="analysis-dropdown-item" data-filename="${esc(a.filename)}">${esc(a.username)} — ${esc(a.date)} (${msgs} messages, ${voice} voice)</div>`;
+  }).join("");
+  wrap.appendChild(dropdown);
+
+  btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    dropdown.style.display = dropdown.style.display === "none" ? "block" : "none";
+  });
+
+  document.addEventListener("click", (e) => {
+    if (!wrap.contains(e.target)) dropdown.style.display = "none";
+  });
+
+  dropdown.querySelectorAll(".analysis-dropdown-item").forEach((item) => {
+    item.addEventListener("click", async () => {
+      dropdown.style.display = "none";
+      try {
+        const data = await api.loadAnalysis(item.dataset.filename);
+        if (data) {
+          state.data = data;
+          EL("landing").style.display = "none";
+          renderDashboard();
+        } else {
+          showToast("Could not load that analysis.");
+        }
+      } catch (err) {
+        showToast("Load failed: " + (err.message || err));
+      }
+    });
   });
 }
 
@@ -213,8 +277,13 @@ function showUpdateBanner(version, url) {
   const banner = EL("updateBanner");
   EL("updateBannerText").innerHTML = "v" + version + " available — <a href=\"" + url + "\" target=\"_blank\">Download</a>";
   banner.style.display = "flex";
+  state.updateAvailable = true;
+  const icon = EL("checkUpdatesBtn");
+  if (icon) icon.classList.add("has-update");
   EL("updateBannerDismiss").onclick = function() {
     banner.style.display = "none";
+    // Icon stays green (has-update) — an update is still available even
+    // though the banner itself was dismissed.
   };
 }
 
@@ -265,8 +334,8 @@ function renderDashboard() {
         const api = await getPywebviewApi();
         await api.checkForUpdate();
         setTimeout(() => {
-          if (EL("updateBanner").style.display === "none") {
-            showToast("You're up to date!");
+          if (!state.updateAvailable) {
+            showToast("No update available.");
           }
         }, 1000);
       } catch (_) {

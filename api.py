@@ -8,6 +8,7 @@ import tempfile
 import urllib.request
 import zipfile
 import shutil
+from datetime import datetime
 from pathlib import Path
 
 ANALYZER_DIR = Path(__file__).parent.resolve()
@@ -15,6 +16,7 @@ sys.path.insert(0, str(ANALYZER_DIR))
 
 from analyzers.messages import full_summary
 from analyzers.voice import voice_summary
+from utils.formatting import format_hours_minutes
 
 VERSION = "2.1.0"
 
@@ -23,6 +25,8 @@ _RELEASES_URL = "https://api.github.com/repos/BengtBuecker/Discord-Personal-Data
 
 class AnalyzerApi:
     """Exposed to JavaScript via pywebview's js_api mechanism."""
+
+    _ACCOUNT_USERNAME_CACHE = None
 
     def __init__(self):
         self._export_dir = None
@@ -86,6 +90,9 @@ class AnalyzerApi:
 
         shutil.rmtree(extract_dir, ignore_errors=True)
 
+        username = self._extract_username(export_dir)
+        self._ACCOUNT_USERNAME_CACHE = username
+
         self._push_progress("Building dashboard...")
         return {
             "msg": {
@@ -103,7 +110,20 @@ class AnalyzerApi:
                 "total_duration_seconds": voice.get("total_duration_seconds", 0),
                 "channel_durations": voice.get("channel_durations", []),
             },
+            "account": {"username": username},
         }
+
+    def _extract_username(self, export_dir: Path) -> str | None:
+        """Read the account username from `Account/user.json`, if present."""
+        user_json_path = export_dir / "Account" / "user.json"
+        if not user_json_path.exists():
+            return None
+        try:
+            with open(user_json_path, "r", encoding="utf-8") as f:
+                account_data = json.load(f)
+            return account_data.get("username")
+        except (json.JSONDecodeError, OSError):
+            return None
 
     def _find_export_root(self, extract_dir: Path) -> Path:
         if (extract_dir / "Account").exists():
@@ -114,7 +134,8 @@ class AnalyzerApi:
         return extract_dir
 
     def saveAnalysis(self, data: dict) -> bool:
-        """Persist the last analysis result for auto-restore on next launch."""
+        """Persist the last analysis result for auto-restore on next launch,
+        and additionally keep a dated copy in the per-user analyses history."""
         appdata = os.getenv("APPDATA")
         if not appdata:
             return False
@@ -123,9 +144,31 @@ class AnalyzerApi:
             save_dir.mkdir(parents=True, exist_ok=True)
             with open(save_dir / "last-analysis.json", "w", encoding="utf-8") as f:
                 json.dump(data, f)
-            return True
         except OSError:
             return False
+
+        try:
+            self._save_to_history(save_dir, data)
+        except OSError:
+            pass  # history is best-effort; last-analysis.json already saved
+
+        return True
+
+    def _save_to_history(self, save_dir: Path, data: dict) -> None:
+        analyses_dir = save_dir / "analyses"
+        analyses_dir.mkdir(parents=True, exist_ok=True)
+
+        username = (
+            (data.get("account") or {}).get("username")
+            or self._ACCOUNT_USERNAME_CACHE
+            or "user"
+        )
+        safe_username = re.sub(r"[^A-Za-z0-9_-]", "_", username) or "user"
+        date_str = datetime.now().strftime("%Y-%m-%d")
+        filename = f"{safe_username}_{date_str}.json"
+
+        with open(analyses_dir / filename, "w", encoding="utf-8") as f:
+            json.dump(data, f)
 
     def getSavedAnalysis(self) -> dict | None:
         """Load the last persisted analysis, if any."""
@@ -141,6 +184,61 @@ class AnalyzerApi:
         except (json.JSONDecodeError, OSError) as e:
             print(f"[WARN] Corrupted saved analysis: {e}", file=sys.stderr)
             return None
+
+    def listSavedAnalyses(self) -> list:
+        """List past analyses from the analyses/ history directory, each
+        named by Discord username + save date, newest first."""
+        appdata = os.getenv("APPDATA")
+        if not appdata:
+            return []
+        analyses_dir = Path(appdata) / "Discord-Personal-Data-Analyzer" / "analyses"
+        if not analyses_dir.exists():
+            return []
+
+        results = []
+        for path in analyses_dir.glob("*.json"):
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+            except (json.JSONDecodeError, OSError):
+                continue
+
+            username = (data.get("account") or {}).get("username") or "user"
+            msg = data.get("msg") or {}
+            voice = data.get("voice") or {}
+            results.append({
+                "username": username,
+                "date": self._date_from_filename(path.name) or "",
+                "filename": path.name,
+                "preview": {
+                    "total_messages": msg.get("total_messages", 0),
+                    "total_voice_time": format_hours_minutes(voice.get("total_duration_seconds", 0)),
+                },
+            })
+
+        results.sort(key=lambda r: r["date"], reverse=True)
+        return results
+
+    def loadAnalysis(self, filename: str) -> dict | None:
+        """Load one specific analysis file from the analyses/ history dir."""
+        appdata = os.getenv("APPDATA")
+        if not appdata:
+            return None
+        safe_name = Path(filename).name  # reject any path traversal
+        path = Path(appdata) / "Discord-Personal-Data-Analyzer" / "analyses" / safe_name
+        if not path.exists():
+            return None
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except (json.JSONDecodeError, OSError) as e:
+            print(f"[WARN] Corrupted saved analysis: {e}", file=sys.stderr)
+            return None
+
+    @staticmethod
+    def _date_from_filename(filename: str) -> str | None:
+        match = re.search(r"_(\d{4}-\d{2}-\d{2})\.json$", filename)
+        return match.group(1) if match else None
 
     def exportAnalysis(self, data: dict) -> str:
         """Save the analysis result to a user-chosen JSON file."""

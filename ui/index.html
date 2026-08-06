@@ -20,8 +20,11 @@
   </div>
 
   <button id="selectBtn" class="btn btn-primary">Select ZIP File</button>
-  <button id="importBtn" class="btn btn-secondary">Import Analysis</button>
-  <button id="continueBtn" class="btn btn-secondary" style="display:none;">Continue last analysis</button>
+  <button id="importBtn" class="btn btn-primary" style="margin-top: var(--sp-md);">Import Analysis</button>
+  <div id="myAnalysisWrap" style="position:relative;">
+    <button id="myAnalysisBtn" class="btn btn-secondary" style="display:none; margin-top: var(--sp-md);">My Analyses</button>
+  </div>
+  <button id="continueBtn" class="btn btn-secondary" style="display:none; margin-top: var(--sp-md);">Continue last analysis</button>
 
   <div id="statusMsg" style="margin-top:var(--sp-lg);color:var(--color-dim);font-size:var(--fs-sm);display:none;"></div>
 </div>
@@ -47,9 +50,11 @@
       <span class="logo-icon"><img src="Logo.png" alt="Logo"></span>
       <h1>Dashboard</h1>
     </div>
-    <button id="checkUpdatesBtn" class="btn btn-secondary btn-sm">Check for Updates</button>
-    <button id="exportBtn" class="btn btn-secondary btn-sm">Export as JSON</button>
-    <button id="newAnalysisBtn" class="btn btn-secondary btn-sm">New Analysis</button>
+    <div class="dashboard-header-right">
+      <span id="checkUpdatesBtn" class="update-icon" title="Check for Updates">⬇</span>
+      <button id="newAnalysisBtn" class="btn btn-secondary btn-sm">New Analysis</button>
+      <button id="exportBtn" class="btn btn-secondary btn-sm">Export as JSON</button>
+    </div>
   </header>
 
   <div class="dashboard-body">
