@@ -6,7 +6,7 @@
   <img src="https://img.shields.io/badge/version-2.1.0-a6e3a1.svg" alt="v2.1.0">
 </p>
 
-<h1 align="center">🔍 Discord Data Analyzer</h1>
+<h1 align="center">🔍 Discord Personal Data Analyzer</h1>
 <p align="center"><em>Turn your Discord GDPR export into readable insights — messages, voice calls, servers.</em></p>
 <p align="center"><strong>Zero dependencies. 100% local. Your data never leaves your machine.</strong></p>
 
@@ -42,7 +42,7 @@ DM Call Duration by User:
 
 ### Desktop App (Windows)
 
-[Download the latest `Discord-Data-Analyzer.exe`](https://github.com/BengtBuecker/Discord-Data-Analysis/releases) from Releases, double-click, drop your ZIP. That's it.
+[Download the latest `Discord-Personal-Data-Analyzer.exe`](https://github.com/BengtBuecker/Discord-Personal-Data-Analysis/releases) from Releases, double-click, drop your ZIP. That's it.
 
 Or run from source:
 
@@ -54,8 +54,8 @@ python main.py
 ### Command Line
 
 ```bash
-git clone https://github.com/BengtBuecker/Discord-Data-Analysis
-cd Discord-Data-Analysis
+git clone https://github.com/BengtBuecker/Discord-Personal-Data-Analysis
+cd Discord-Personal-Data-Analysis
 python analyzer.py --dir "path/to/discord/export" all
 ```
 
@@ -75,8 +75,8 @@ pyinstaller --onefile --windowed \
   --hidden-import utils.parser \
   --hidden-import utils.formatting \
   --hidden-import tkinter \
-  --name "Discord-Data-Analyzer" main.py
-# → dist/Discord-Data-Analyzer.exe
+  --name "Discord-Personal-Data-Analyzer" main.py
+# → dist/Discord-Personal-Data-Analyzer.exe
 ```
 
 The [GitHub Actions workflow](.github/workflows/build-exe.yml) also auto-builds a Windows `.exe` on every tagged release.
