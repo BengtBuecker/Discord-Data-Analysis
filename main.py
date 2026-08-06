@@ -46,9 +46,17 @@ def self_test() -> int:
     and UI assets are present. Run via `--self-test` (used by CI against
     the frozen .exe before it ships in a release).
     """
+    from api import VERSION
+
     checks = [
         ("AnalyzerApi has analyzeZip", hasattr(AnalyzerApi, "analyzeZip")),
         ("AnalyzerApi has selectFile", hasattr(AnalyzerApi, "selectFile")),
+        ("AnalyzerApi has saveAnalysis", hasattr(AnalyzerApi, "saveAnalysis")),
+        ("AnalyzerApi has getSavedAnalysis", hasattr(AnalyzerApi, "getSavedAnalysis")),
+        ("AnalyzerApi has exportAnalysis", hasattr(AnalyzerApi, "exportAnalysis")),
+        ("AnalyzerApi has importAnalysis", hasattr(AnalyzerApi, "importAnalysis")),
+        ("AnalyzerApi has checkForUpdate", hasattr(AnalyzerApi, "checkForUpdate")),
+        ("VERSION is set", isinstance(VERSION, str) and len(VERSION) > 0),
         ("UI_DIR exists", UI_DIR.exists()),
         ("index.html present", (UI_DIR / "index.html").exists()),
         ("app.js present", (UI_DIR / "app.js").exists()),
