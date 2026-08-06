@@ -19,12 +19,15 @@
     <div class="dropzone-label">Drop ZIP here<br>or click to select</div>
   </div>
 
-  <button id="selectBtn" class="btn btn-primary">Select ZIP File</button>
-  <button id="importBtn" class="btn btn-primary" style="margin-top: var(--sp-md);">Import Analysis</button>
-  <div id="myAnalysisWrap" style="position:relative;">
-    <button id="myAnalysisBtn" class="btn btn-secondary" style="display:none; margin-top: var(--sp-md);">My Analyses</button>
+  <div class="landing-btn-row">
+    <button id="selectBtn" class="btn btn-primary">Select ZIP File</button>
+    <button id="importBtn" class="btn btn-primary">Import Analysis</button>
+    <div class="landing-divider"><span>or</span></div>
+    <div id="myAnalysisWrap" style="position:relative;">
+      <button id="myAnalysisBtn" class="btn btn-secondary" style="display:none;">My Analyses</button>
+    </div>
+    <button id="continueBtn" class="btn btn-secondary" style="display:none;">Continue last analysis</button>
   </div>
-  <button id="continueBtn" class="btn btn-secondary" style="display:none; margin-top: var(--sp-md);">Continue last analysis</button>
 
   <div id="statusMsg" style="margin-top:var(--sp-lg);color:var(--color-dim);font-size:var(--fs-sm);display:none;"></div>
 </div>
@@ -51,7 +54,16 @@
       <h1>Dashboard</h1>
     </div>
     <div class="dashboard-header-right">
-      <span id="checkUpdatesBtn" class="update-icon" title="Check for Updates">⬇</span>
+      <span id="checkUpdatesBtn" class="update-icon" title="Check for Updates">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+          <polyline points="7 10 12 15 17 10"/>
+          <line x1="12" y1="15" x2="12" y2="3"/>
+        </svg>
+      </span>
+      <div id="headerMyAnalysisWrap" style="position:relative;">
+        <button id="headerMyAnalysisBtn" class="btn btn-secondary btn-sm" style="display:none;" title="My Analyses">My Analyses</button>
+      </div>
       <button id="newAnalysisBtn" class="btn btn-secondary btn-sm">New Analysis</button>
       <button id="exportBtn" class="btn btn-secondary btn-sm">Export as JSON</button>
     </div>

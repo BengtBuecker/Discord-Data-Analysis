@@ -216,6 +216,39 @@ body {
   color: var(--color-subtext);
 }
 
+.landing-btn-row {
+  width: 420px;
+  max-width: 90vw;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-md);
+}
+
+.landing-btn-row .btn {
+  width: 100%;
+}
+
+.landing-btn-row .btn:focus-visible {
+  box-shadow: 0 0 0 2px var(--clr-accent), 0 0 0 4px var(--clr-bg);
+}
+
+.landing-divider {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-sm);
+  color: var(--clr-dim);
+  font-size: var(--fs-sm);
+  user-select: none;
+}
+
+.landing-divider::before,
+.landing-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--clr-overlay);
+}
+
 /* ── Buttons ───────────────────────────────────────────────────────────── */
 
 .btn {
@@ -273,9 +306,24 @@ body {
   padding: 0 var(--sp-sm);
   transition: color var(--tr-normal);
   user-select: none;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
 }
 .update-icon:hover { color: var(--clr-text); }
 .update-icon.has-update { color: var(--clr-success); }
+
+.update-icon.has-update::after {
+  content: "";
+  position: absolute;
+  top: -2px;
+  right: -4px;
+  width: 6px;
+  height: 6px;
+  background: var(--clr-success);
+  border: 2px solid var(--clr-bg);
+  border-radius: 50%;
+}
 
 /* ── My Analyses Dropdown ──────────────────────────────────────────────── */
 
