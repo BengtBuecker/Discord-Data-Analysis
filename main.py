@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Discord Data Analyzer -- PyWebView Entry Point
+"""Discord Personal Data Analyzer -- PyWebView Entry Point
 
 Renders the dashboard via native OS webview (Edge WebView2 on Windows).
 Supports both dev (python main.py) and PyInstaller-frozen (.exe) modes.
@@ -29,7 +29,7 @@ def run_webview():
     html_path = str(UI_DIR / "index.html")
 
     window = webview.create_window(
-        title="Discord Data Analyzer",
+        title="Discord Personal Data Analyzer",
         url=html_path,
         js_api=api,
         width=1100,
@@ -67,7 +67,7 @@ def main():
 
     if not HAS_WEBVIEW:
         print("=" * 60)
-        print("  Discord Data Analyzer")
+        print("  Discord Personal Data Analyzer")
         print("=" * 60)
         print()
         print("  pywebview not installed.")

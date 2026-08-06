@@ -1,4 +1,4 @@
-"Discord Data Analyzer -- JS Frontend"
+"Discord Personal Data Analyzer -- JS Frontend"
 
 const EL = (id) => document.getElementById(id);
 const BAR_COLORS = [
