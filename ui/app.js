@@ -94,7 +94,7 @@ function setupLanding() {
           state.data = saved;
           EL("landing").style.display = "none";
           renderDashboard();
-          try { await api.saveAnalysis(state.data); } catch (_) {}
+          try { await api.saveAnalysis(state.data); } catch (e) { console.warn("Failed to save analysis:", e); }
         });
       }
     } catch (_) { /* silent - bridge not ready at page load is OK */ }
@@ -108,7 +108,7 @@ function setupLanding() {
         state.data = data;
         EL("landing").style.display = "none";
         renderDashboard();
-        try { await api.saveAnalysis(state.data); } catch (_) {}
+        try { await api.saveAnalysis(state.data); } catch (e) { console.warn("Failed to save imported analysis:", e); }
       } else {
         showToast("Invalid analysis file.");
       }
@@ -146,7 +146,7 @@ async function analyzeFile(path) {
     state.data = data;
     hideLoading();
     renderDashboard();
-    try { await api.saveAnalysis(state.data); } catch (_) { /* silent */ }
+    try { await api.saveAnalysis(state.data); } catch (e) { console.warn("Failed to persist analysis:", e); }
   } catch (err) {
     hideLoading();
     EL("landing").style.display = "flex";
