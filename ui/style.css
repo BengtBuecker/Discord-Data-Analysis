@@ -347,7 +347,7 @@ body {
 }
 .analysis-dropdown-item:hover {
   background: var(--clr-accent);
-  color: #fff;
+  color: var(--clr-base);
 }
 .analysis-dropdown-empty {
   color: var(--clr-dim);
